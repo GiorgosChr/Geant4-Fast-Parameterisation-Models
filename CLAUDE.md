@@ -8,15 +8,36 @@ Start every reply with "Giorgos".
 
 ## Repository state
 
-This repo is a project shell: `README.md`, `LICENSE`, and the upstream **Geant4 source tree vendored as a git submodule at `geant4/`** (currently `v11.5.0.beta`). None of the project's own fast-parameterisation code exists yet — it will be written at the repo root, alongside (not inside) the submodule.
+This repo is a project shell: `README.md`, `LICENSE`, and two upstream source trees vendored as git submodules. None of the project's own fast-parameterisation code exists yet — it will be written at the repo root, alongside (not inside) the submodules.
 
-**Treat `geant4/` as read-only vendored upstream.** It is a mirror of `git@github.com:Geant4/geant4.git` and exists as reference source + a buildable toolkit. Never commit edits inside it; changes there show up as a submodule pointer bump, which is almost never intended.
+| Path | Upstream | Pinned at | Working tree |
+| --- | --- | --- | --- |
+| `geant4/` | `git@github.com:Geant4/geant4.git` | `v11.5.0.beta` | ~200 MB (+~440 MB of git objects) |
+| `root/` | `git@github.com:root-project/root.git` | `master`, commit `28b3942d157` ≈ 6.41.01-dev | ~776 MB |
+
+**Treat both as read-only vendored upstream.** They are mirrors kept as reference source + buildable toolkits. Never commit edits inside them; changes there show up as a submodule pointer bump, which is almost never intended.
+
+Note that `root/` tracks **master, not a release** — `git describe` returns `v6-39-99-1013-g28b3942d157`, so don't go looking for a version tag or assume release-note behaviour.
 
 Clone/refresh with:
 
 ```bash
-git submodule update --init --recursive   # ~2 GB, slow first time
+git submodule update --init --recursive   # ~1 GB of working tree, slow first time
 ```
+
+## Local environment
+
+macOS on Apple Silicon, Homebrew prefix `/opt/homebrew`, Apple clang 17, CMake 4.0.3, 12 cores (use `-j10`). Build trees live at `build/<pkg>`, install prefixes at `install/<pkg>` (`build/geant4`, `install/geant4`, and the same pattern for `root`); all untracked.
+
+**Homebrew is hands-off.** Never run `brew update`, `brew upgrade`, or `brew cleanup`, and never upgrade a formula that isn't strictly required for the task at hand — the machine deliberately sits on ~80 outdated formulae. Install with:
+
+```bash
+HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew install <formula>
+```
+
+`brew install` still force-upgrades any outdated *dependencies* of what it installs, and no flag prevents that. So before installing, check the blast radius with `brew install --dry-run <formula>` against `brew outdated`, and say what would get upgraded rather than discovering it afterwards. `brew --prefix <formula>` is **not** an installation check — it prints a computed path for uninstalled formulae too; use `brew list --formula`.
+
+**The shell is zsh, not bash.** Quote anything glob-like (`"G4*DATA"`), or zsh aborts the command with `no matches found` instead of passing it through. Scalars do not word-split: `for x in $var` iterates once over the whole string — use an array (`var=(a b c)`) or `${=var}`.
 
 ## Building
 
@@ -24,12 +45,39 @@ git submodule update --init --recursive   # ~2 GB, slow first time
 
 ```bash
 cmake -S geant4 -B build/geant4 -DCMAKE_INSTALL_PREFIX=$PWD/install/geant4 \
+      -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qtbase \
       -DGEANT4_INSTALL_DATA=ON -DGEANT4_BUILD_MULTITHREADED=ON -DGEANT4_USE_QT=ON
-cmake --build build/geant4 -j8 && cmake --install build/geant4
-source install/geant4/bin/geant4.sh   # sets Geant4_DIR and the G4*DATA vars
+cmake --build build/geant4 -j10 && cmake --install build/geant4
+source install/geant4/bin/geant4.sh   # exports GEANT4_DATA_DIR
 ```
 
 This takes tens of minutes. Prefer an existing install and just `source .../bin/geant4.sh`.
+
+**Don't go looking for `G4LEDATA` and friends.** As of 11.5 `geant4.sh` exports only `GEANT4_DATA_DIR` and leaves every individual `G4*DATA` export commented out; datasets are resolved from that one directory at runtime by `G4FindDataDir.cc`. An empty `$G4LEDATA` after sourcing is correct, not a broken install.
+
+**`-DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qtbase` is mandatory here and easy to lose.** Qt comes from Homebrew's `qtbase` formula, which CMake does not search by default; without it configure dies with `Could not find a package configuration file provided by "QT"` and every downstream step fails confusingly (no generated `Makefile`, no install tree to source). Geant4 needs only the `Core Gui Widgets OpenGL OpenGLWidgets` components (`geant4/cmake/Modules/G4InterfaceOptions.cmake`), so `qtbase` is deliberate — do not "fix" a Qt problem by installing the full `qt` formula, which adds ~50 unused packages including `qtwebengine`.
+
+### ROOT (`root/`) — for analysis, not for building anything here
+
+**Nothing in this repo needs ROOT to compile or run.** Geant4 writes `.root` files through the *bundled* g4tools (`geant4/source/analysis/root/` includes `tools/wroot/…`), and no example under `geant4/examples/extended/parameterisations/` calls `find_package(ROOT)`. So never build ROOT merely to obtain ROOT-format output — it is here to *analyse* and plot that output (and, if wanted later, for TMVA SOFIE, which generates C++ inference code as an alternative to the ONNX/LWTNN/Torch backends Par04 uses; needs `-Dtmva-sofie=ON` + protobuf 3).
+
+ROOT is **not installed on this machine** — no `root`/`root-config` on `PATH`, no `root` in `brew list`. Any ROOT step therefore requires building the submodule first, which is far more expensive than building Geant4: `builtin_llvm`, `builtin_clang` and `builtin_cling` all default to ON, so the build compiles an entire LLVM/Clang toolchain. Budget hours and >10 GB, and needs CMake ≥ 3.20 (system CMake 4.0.3 is fine).
+
+```bash
+cmake -S root -B build/root -DCMAKE_INSTALL_PREFIX=$PWD/install/root \
+      -Droofit=OFF -Dtmva=OFF -Dwebgui=OFF -Dxrootd=OFF -Ddavix=OFF -Dfitsio=OFF
+cmake --build build/root -j10 && cmake --install build/root
+source install/root/bin/thisroot.sh
+root -l -b -q analysis.C     # batch macro;  `root -l` for the interpreter
+```
+
+Three things that bite:
+
+- **`check_connection` defaults to ON**, so configure *fails* rather than degrades when a component that must be downloaded (clad, and any enabled `builtin_*`) can't be fetched. ROOT configure is not offline-safe.
+- **`ROOTConfig.cmake` does not install to `lib/cmake/ROOT`.** Without `-Dgnuinstall=ON` it lands in `<prefix>/cmake` (with it, `<prefix>/share/cmake`), so downstream apps need `-DROOT_DIR=$PWD/install/root/cmake` — the conventional path just silently fails to be found.
+- On macOS ROOT flips its own defaults: `cocoa` ON, `x11` OFF, `builtin_openssl` ON. Don't "fix" graphics by forcing `-Dx11=ON`.
+
+The `-D…=OFF` list above is only for trimming build time when all that's wanted is histogramming/RDataFrame; drop it if a specific package (RooFit, TMVA) is actually needed.
 
 ### A Geant4 application (the standard pattern all examples follow)
 

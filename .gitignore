@@ -1,0 +1,7 @@
+# Build trees and install prefixes (Geant4, ROOT, and applications)
+build/
+install/
+*_build/
+
+# macOS
+.DS_Store
