@@ -1,0 +1,31 @@
+# Interactive session: draw the block and a handful of conversions.
+/run/initialize
+
+/vis/open
+/vis/viewer/set/autoRefresh false
+/vis/verbose errors
+
+# Draw geometry
+/vis/drawVolume
+
+# Look at the block from the side, so the conversion depth is visible
+/vis/viewer/set/viewpointThetaPhi 90 0 deg
+/vis/viewer/set/style wireframe
+/vis/scene/add/axes 0 0 0 10 cm
+
+# Draw trajectories, colour coded by charge (photon green, e- red, e+ blue)
+/vis/scene/add/trajectories smooth
+/vis/modeling/trajectories/create/drawByCharge
+/vis/modeling/trajectories/drawByCharge-0/default/setDrawStepPts true
+/vis/modeling/trajectories/drawByCharge-0/default/setStepPtsSize 2
+
+# Accumulate the events of a run in one picture
+/vis/scene/endOfEventAction accumulate
+
+/vis/viewer/set/autoRefresh true
+/vis/verbose warnings
+
+# A mono-energetic beam makes the exponential conversion depth easy to see
+/study/gun/minEnergy 1 GeV
+/study/gun/maxEnergy 1 GeV
+/run/beamOn 20

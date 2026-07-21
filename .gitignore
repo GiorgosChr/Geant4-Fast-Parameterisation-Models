@@ -3,5 +3,10 @@ build/
 install/
 *_build/
 
+# Simulation output
+ntuples/
+logs/
+*.root
+
 # macOS
 .DS_Store

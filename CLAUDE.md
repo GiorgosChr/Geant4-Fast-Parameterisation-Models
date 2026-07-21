@@ -6,9 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Start every reply with "Giorgos".
 
+## Git
+
+**Never attribute commits to Claude.** Do not add a `Co-Authored-By: Claude …` trailer, a "Generated with Claude Code" line, or any similar marker to commit messages or PR descriptions — the user is the sole author of record. This overrides the default commit-trailer behaviour.
+
 ## Repository state
 
-This repo is a project shell: `README.md`, `LICENSE`, and two upstream source trees vendored as git submodules. None of the project's own fast-parameterisation code exists yet — it will be written at the repo root, alongside (not inside) the submodules.
+The repo holds `README.md`, `LICENSE`, two upstream source trees vendored as git submodules, and `studies/` — self-contained preliminary studies, each its own CMake project. No fast-simulation model of the project's own exists yet; it will be written at the repo root, alongside (not inside) the submodules.
 
 | Path | Upstream | Pinned at | Working tree |
 | --- | --- | --- | --- |
@@ -91,6 +95,34 @@ cmake --build <appdir>_build -j8
 ```
 
 The executable name is the basename of the `.cc` holding `main()`. Applications find Geant4 via `find_package(Geant4 ... ui_all vis_all)` + `include(${Geant4_USE_FILE})`.
+
+## Studies (`studies/`)
+
+Self-contained preliminary studies, one CMake project each, built exactly like any Geant4 application. They do **not** use `G4VFastSimulationModel` — they produce the reference distributions a parameterisation will later be fitted to.
+
+- **`studies/gammaConversionSi`** — γ → e⁺e⁻ conversion in a thick block, with `G4GammaConversion` as the only process in a hand-written `G4VUserPhysicsList`. Writes one ROOT ntuple row per conversion (photon energy, path in block, pair energies/angles). See its `README.md` for the ntuple schema and validated numbers.
+
+```bash
+./studies/gammaConversionSi/build.sh        # configures + builds; JOBS/Geant4_DIR/CLEAN override
+source install/geant4/bin/geant4.sh
+cd build/gammaConversionSi && ./gammaConversionSi config/default.cfg   # 100k events in <1 s
+```
+
+Each study ships its own `build.sh` that resolves paths relative to itself, so it runs from any working directory; keep that pattern for new ones.
+
+Conventions worth keeping for future studies:
+
+- **A run is described by a `key = value` config file, not a macro.** `ConvConfig` parses it (units via `G4UIcommand::ConvertToDimensionedDouble`) and replays it as UI commands around `/run/initialize`. The argument is treated as a config file unless it ends in `.mac`.
+- **Output is auto-named and collected in `ntuples/`** (git-ignored) as `<material>_<energy>_<N>.root`, so repeated runs with different settings never overwrite each other. `<N>` is photons *fired*, not rows written.
+- **The full Geant4 output is teed to `logs/<same stem>.log`** (also git-ignored) by `ConvLogger`, a `G4UIsession` installed as the cout destination.
+- Ntuple units are **MeV / mm / rad**, applied explicitly at fill time (`value / MeV`).
+
+Three Geant4 traps this study hit, all relevant to any single-process EM study:
+
+- **A worker thread's output never reaches the master's cout destination.** `G4UImanager::SetCoutDestination` on the master captures only master output; each worker's `G4MTcoutDestination` writes its `G4WT<n> > ` lines straight to the terminal. To log everything, install the same destination again from `ActionInitialization::Build()`, which runs on the worker thread — and serialise the writes, since all threads then share one stream.
+
+- **A bare `new G4GammaConversion` uses `G4PairProductionRelModel`**, which emits an *exactly coplanar* pair (Δφ ≡ π to machine precision) — silently useless for an angular study. `G4EmStandardPhysics` (opt0) inherits this; only opt3/opt4/Livermore/LowEP call `SetEmModel(new G4BetheHeitler5DModel())`. Set the 5D model explicitly.
+- **`G4BetheHeitler5DModel` emits three secondaries** — e⁻, e⁺ and a recoil — and builds the recoiling nucleus through `G4IonTable`, so `ConstructParticle()` must define `G4GenericIon` (plus `G4IonConstructor`) or every event warns `PART105: Can not create ions because GenericIon is not ready`. In a fraction ≈1/(Z+1) of conversions (6.7 % in Si) the recoil is a second electron (triplet conversion), so "the" pair electron is the *first* e⁻ in the secondary vector.
 
 ### Testing
 

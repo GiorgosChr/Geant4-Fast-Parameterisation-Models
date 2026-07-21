@@ -1,6 +1,21 @@
 # Geant4-Fast-Parameterisation-Models
 Geant4 fast parameterisation examples and utilities for implementing, testing, and benchmarking fast detector simulation techniques using G4FastSimulationModel.
 
+## Layout
+
+| Path | Contents |
+| --- | --- |
+| `studies/` | Self-contained preliminary studies, each its own CMake project |
+| `geant4/`, `root/` | Vendored upstream toolkits (git submodules, read-only) |
+
+### Studies
+
+- [`studies/gammaConversionSi`](studies/gammaConversionSi) — γ → e⁺e⁻ conversion in a thick
+  silicon block with pair conversion as the *only* physics process. Writes a ROOT ntuple with the
+  photon energy, the path length in silicon before converting, and the pair energies and angles.
+  Run configuration comes from a `key = value` file; output files are auto-named from the material,
+  energy range and event count and collected under `ntuples/`.
+
 ## Dependencies
 
 The Geant4 toolkit itself is vendored as a git submodule at `geant4/` (currently `v11.5.0.beta`), so the dependencies below are those needed to *build* it and any application in this repo.

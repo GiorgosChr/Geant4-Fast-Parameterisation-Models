@@ -1,0 +1,163 @@
+# Preliminary study: γ → e⁺e⁻ conversion in silicon
+
+Fires photons into a thick block (silicon by default) with **pair conversion as the only physics
+process** and writes one ROOT ntuple row per conversion: the photon energy, the path travelled
+inside the block before converting, and the energies and angles of the produced pair.
+
+Nothing competes with conversion — no Compton, no photoelectric effect, and no ionisation or
+bremsstrahlung on the e± — so the recorded final state is exactly what the conversion model
+produced, undisturbed. That makes it clean ground truth to fit or validate a fast-simulation
+parameterisation against.
+
+## Build
+
+```bash
+./studies/gammaConversionSi/build.sh
+```
+
+`build.sh` configures and builds into `build/gammaConversionSi/` and prints the run commands when
+it finishes. It resolves every path relative to itself, so it works from any working directory.
+Environment overrides:
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `JOBS` | `10` | Parallel build jobs |
+| `Geant4_DIR` | `install/geant4/lib/cmake/Geant4` | Build against a different Geant4 (system, CVMFS, …) |
+| `CLEAN` | *(unset)* | Wipe the build tree before configuring |
+
+```bash
+CLEAN=1 JOBS=4 ./studies/gammaConversionSi/build.sh
+```
+
+The equivalent by hand, if you prefer:
+
+```bash
+cmake -S studies/gammaConversionSi -B build/gammaConversionSi \
+      -DGeant4_DIR=$PWD/install/geant4/lib/cmake/Geant4
+cmake --build build/gammaConversionSi -j10
+```
+
+## Run
+
+```bash
+source install/geant4/bin/geant4.sh        # from the repo root
+cd build/gammaConversionSi
+./gammaConversionSi config/default.cfg     # batch run from a config file
+./gammaConversionSi config/mono1GeV.cfg    # 50k photons at a fixed 1 GeV
+./gammaConversionSi                        # interactive UI + vis.mac
+./gammaConversionSi -h
+```
+
+100 000 events take under a second on 10 threads. The argument is a config file unless it ends in
+`.mac`, in which case it is executed as a plain Geant4 macro.
+
+`config/` in the build directory is a **copy** made at CMake time. Edit the originals under
+`studies/gammaConversionSi/config/` and re-run the build if you want changes to survive a clean
+rebuild.
+
+## Configuration
+
+A run is fully described by a `key = value` file in `config/`; numeric values may carry any Geant4
+unit. `config/default.cfg` documents every key and lists the defaults; `config/mono1GeV.cfg` is a
+mono-energetic run.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `material` | `G4_Si` | Any NIST material name |
+| `blockThickness`, `blockWidth` | `1 m` | Full block dimensions (beam axis / transverse) |
+| `minEnergy`, `maxEnergy` | `2 MeV`, `10 GeV` | Photon energy, sampled **log-uniformly**; set equal for a mono-energetic run |
+| `nEvents`, `nThreads` | `100000`, `10` | |
+| `model` | `BetheHeitler5D` | Conversion model, see below |
+| `conversionType` | `mixed` | `mixed`, `nuclear` or `triplet` |
+| `outputDir` | `ntuples` | Created if missing |
+| `logDir` | `logs` | Created if missing |
+| `outputName` | *(derived)* | Overrides the derived file name |
+
+Output files are collected in `outputDir` and named from the material, the energy range and the
+number of events, so runs with different settings never overwrite each other. The run log shares
+the same stem, so a dataset and its log always sit next to each other:
+
+```
+ntuples/Si_2MeV-10GeV_100000.root   logs/Si_2MeV-10GeV_100000.log
+ntuples/Si_1GeV_50000.root          logs/Si_1GeV_50000.log
+```
+
+Both directories are git-ignored. The `<N>` in the name is the number of photons **fired**, not
+the number of ntuple rows — non-converting photons write no row.
+
+### Logging
+
+Everything Geant4 prints is teed to the log while still going to the terminal: the banner, the
+physics list and geometry dumps, the run configuration, per-thread messages and the end-of-run
+summary. `ConvLogger` is installed on the master *and* on every worker thread — a worker's default
+`G4MTcoutDestination` writes its `G4WT0 > ` lines straight to the terminal and never reaches the
+master destination, so worker-side `G4Exception` warnings would otherwise appear on screen but be
+missing from the log. Runs from a macro log to `logs/<macro>.log`, interactive sessions to
+`logs/interactive.log`.
+
+The same keys are also available as UI commands (`/study/det/material`,
+`/study/det/blockThickness`, `/study/gun/minEnergy`, …) for interactive work.
+
+### Choice of conversion model
+
+A bare `G4GammaConversion` falls back to `G4PairProductionRelModel`, which emits an **exactly
+coplanar** pair — `phiElectron - phiPositron` comes out identically π, so the azimuthal correlation
+is unusable. This study therefore sets `G4BetheHeitler5DModel` explicitly, the same model the
+accurate reference lists (EM opt3/opt4, Livermore, LowEP) use. It samples the full five-dimensional
+final state, so the polar angles, the energy sharing and the acoplanarity are all physical.
+`model = PairProductionRel` is kept only as a comparison point.
+
+The 5D model always emits three secondaries — e⁻, e⁺ and a recoil. Usually the recoil is the
+nucleus; in a fraction ≈ 1/(Z+1) of cases (6.7 % in silicon) the photon converts on an atomic
+electron instead and the recoil is a second electron. Those **triplet** events are flagged by
+`isTriplet` and can be removed with `conversionType = nuclear`.
+
+## Ntuple `conversions`
+
+One row per **converting** event; photons that leave the block without converting write no row and
+are only counted in the end-of-run summary. Energies in **MeV**, lengths in **mm**, angles in
+**radians**.
+
+| Column | Meaning |
+| --- | --- |
+| `eGamma` | Energy of the incident photon |
+| `pathInBlock` | Path travelled inside the block from entry to the conversion vertex |
+| `eElectron`, `ePositron` | Kinetic energy of the pair |
+| `thetaElectron`, `thetaPositron` | Polar angle with respect to the **initial** photon direction |
+| `phiElectron`, `phiPositron` | Azimuth about the photon axis; the difference is the acoplanarity |
+| `openingAngle` | Angle between e⁻ and e⁺ |
+| `zConv` | z of the conversion vertex |
+| `eRecoil` | Kinetic energy of the recoiling nucleus, or of the recoil electron for a triplet |
+| `isTriplet` | 1 for conversion on an atomic electron, 0 for nuclear |
+
+Energy is conserved row by row as `eElectron + ePositron + eRecoil + 2 mₑc² = eGamma`.
+
+## Reading the output
+
+ROOT is not installed on this machine (`root/` is a submodule that would have to be built first),
+so the quickest way in is `uproot`:
+
+```python
+import uproot, numpy as np
+d = uproot.open("ntuples/Si_1GeV_50000.root")["conversions"].arrays(library="np")
+print(d["pathInBlock"].mean() / 10, "cm")     # conversion mean free path
+nuclear = d["isTriplet"] == 0
+```
+
+## Validation
+
+Reproduced on this machine with the shipped configs:
+
+- **Mean free path.** `config/mono1GeV.cfg` gives `mean(pathInBlock) = 12.86 cm` with a standard
+  deviation of 12.73 cm — the equality is the signature of a clean exponential. Scanning the
+  spectrum run shows it falling with energy and flattening at ~12.3 cm, approaching the asymptotic
+  (9/7)·X₀ = 12.05 cm for silicon (X₀ = 9.37 cm).
+- **Energy conservation.** `|eElectron + ePositron + eRecoil + 2mₑ − eGamma| < 1e-5 MeV` over all rows.
+- **Geometry.** `zConv == −500 mm + pathInBlock` exactly, confirming the path accumulation.
+- **Triplet fraction.** 6.78 % in silicon, against the expected 1/(Z+1) = 6.67 %.
+- **Angles.** Median `thetaElectron` ≈ 1.5 mrad at 1 GeV, a few times mₑc²/E = 0.51 mrad, as
+  expected for the heavy-tailed Bethe–Heitler distribution; the acoplanarity is broadly
+  distributed rather than fixed at π.
+- **Conversion fraction.** 99.96 % at 1 GeV in 1 m of silicon; 91.2 % over 2 MeV–10 GeV, the
+  shortfall coming entirely from the lowest energies where the mean free path exceeds the block
+  thickness. The end-of-run summary prints this number.
