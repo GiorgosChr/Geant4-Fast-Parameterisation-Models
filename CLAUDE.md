@@ -53,6 +53,8 @@ source install/geant4/bin/geant4.sh   # exports GEANT4_DATA_DIR
 
 This takes tens of minutes. Prefer an existing install and just `source .../bin/geant4.sh`.
 
+**Run every one of these from the repo root**, not from inside `build/`: `cmake --install` takes the build directory as an argument, and the `source` path is relative to the root. `geant4.sh` itself self-locates (`dirname ${BASH_SOURCE[0]:-$0}`) and explicitly handles zsh, so only the path you type matters, not your working directory. Note it does **not** export `Geant4_DIR` — applications still need `-DGeant4_DIR=<prefix>/lib/cmake/Geant4`.
+
 **Don't go looking for `G4LEDATA` and friends.** As of 11.5 `geant4.sh` exports only `GEANT4_DATA_DIR` and leaves every individual `G4*DATA` export commented out; datasets are resolved from that one directory at runtime by `G4FindDataDir.cc`. An empty `$G4LEDATA` after sourcing is correct, not a broken install.
 
 **`-DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qtbase` is mandatory here and easy to lose.** Qt comes from Homebrew's `qtbase` formula, which CMake does not search by default; without it configure dies with `Could not find a package configuration file provided by "QT"` and every downstream step fails confusingly (no generated `Makefile`, no install tree to source). Geant4 needs only the `Core Gui Widgets OpenGL OpenGLWidgets` components (`geant4/cmake/Modules/G4InterfaceOptions.cmake`), so `qtbase` is deliberate — do not "fix" a Qt problem by installing the full `qt` formula, which adds ~50 unused packages including `qtwebengine`.
@@ -93,6 +95,20 @@ The executable name is the basename of the `.cc` holding `main()`. Applications 
 ### Testing
 
 Geant4 applications have no unit-test framework here. Validation is by macro: each example ships `exampleXYZ.in` (input) and `exampleXYZ.out` (reference output), and regression checking means diffing a run against the reference. Use short `/run/beamOn N` macros for iteration; note that MT output ordering is non-deterministic, so run single-threaded (`/run/numberOfThreads 1` or `-DGEANT4_BUILD_MULTITHREADED=OFF`) when comparing output.
+
+**Par03 and Par04 require `-m MACRO`** — a bare macro path is rejected with `Unknown argument` (`examplePar03.cc`, `examplePar04.cc`). Par01, Par02 and gflash take the macro positionally, as in the recipe above.
+
+**The shipped `.out` files are not from this Geant4 version, so never diff them whole.** Most are `geant4-11-04-ref-06`; `Par03/examplePar03.out` is `geant4-10-07-ref-09` (2021) and is badly stale — Par03 also ships a second, much closer reference as `Par03/Par03.out`, which is the one to use. Differences in the version banner, available vis drivers, and FPE/G4Backtrace notices are expected noise. Compare the physics lines instead (for Par03: the fitted `sigma`, `alpha`, `beta`, `max depth`, and the deposit count).
+
+Known-good smoke test on this machine — builds and runs in ~30 s single-threaded, reproducing `sigma = 9.87274 mm`, `alpha = 4.3593`, 100 deposits exactly as in `Par03.out`:
+
+```bash
+cmake -S geant4/examples/extended/parameterisations/Par03 -B build/Par03 \
+      -DGeant4_DIR=$PWD/install/geant4/lib/cmake/Geant4
+cmake --build build/Par03 -j10
+source install/geant4/bin/geant4.sh
+./build/Par03/examplePar03 -m <macro>.in   # writes .root files into $PWD
+```
 
 ## Fast simulation architecture (what this project is about)
 
