@@ -17,8 +17,8 @@ class G4ParticleGun;
  *
  * The energy is sampled log-uniformly between /study/gun/minEnergy and
  * /study/gun/maxEnergy so that a single run covers the whole spectrum with
- * comparable statistics per decade. Setting the two limits equal gives a
- * mono-energetic run.
+ * comparable statistics per order of magnitude. Setting the two limits equal
+ * gives a mono-energetic run.
  *
  * The default lower limit is 2 MeV rather than the 1.022 MeV threshold: the
  * conversion cross section vanishes at threshold, so photons just above it

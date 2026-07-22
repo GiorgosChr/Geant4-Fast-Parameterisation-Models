@@ -78,9 +78,10 @@ class ConversionDNN(nn.Module):
     """Fully connected network with normalisation and batch norm built in.
 
     Both the inputs and the targets are strictly positive and span between
-    five and twelve decades, so the in-model transform is ``log10`` followed by
-    a min-max rescaling onto ``[0, 1]``. Rescaling the raw values would leave
-    nearly every event squashed against zero, with rare points far up the range.
+    five and twelve orders of magnitude, so the in-model transform is ``log10``
+    followed by a min-max rescaling onto ``[0, 1]``. Rescaling the raw values
+    would leave nearly every event squashed against zero, with rare points far
+    up the range.
     Working in log space also makes the three predicted quantities positive by
     construction, since they are decoded through ``10**x``.
 
@@ -174,8 +175,8 @@ class ConversionDNN(nn.Module):
 
         This is what the loss should be compared against, paired with
         `normalise_targets`, so that the three outputs each cover [0, 1] and
-        contribute comparably despite spanning 5.5, 7.5 and 12 decades in
-        physical units.
+        contribute comparably despite spanning 5.5, 7.5 and 12 orders of
+        magnitude in physical units.
         """
         if not bool(self.fitted):
             raise RuntimeError(

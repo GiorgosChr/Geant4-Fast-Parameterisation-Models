@@ -44,7 +44,7 @@ void ConvPrimaryGeneratorAction::GeneratePrimaries(G4Event* aEvent)
   }
   fParticleGun->SetParticlePosition(G4ThreeVector(0., 0., -0.999 * worldHalfZ));
 
-  // Log-uniform sampling gives comparable statistics in every energy decade;
+  // Log-uniform sampling gives comparable statistics in every order of magnitude of energy;
   // equal limits degenerate to a mono-energetic run
   G4double energy = fMinEnergy;
   if (fMaxEnergy > fMinEnergy) {

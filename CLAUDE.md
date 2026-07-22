@@ -176,3 +176,5 @@ Missing either step means the model silently never fires — check both first wh
 ## Conventions
 
 Geant4 style, enforced upstream by `geant4/.clang-format` and `geant4/.clang-tidy`: 2-space indent, 100-column limit, `G4`-prefixed types, `f`-prefixed data members, `a`-prefixed parameters, always use Geant4 unit constants (`GeV`, `mm`) rather than bare numbers. Reuse those config files for project code so it reads like the toolkit it extends.
+
+In prose — comments, docstrings, READMEs — write **"orders of magnitude"**, never "decades", when describing the range a quantity spans. "Decade" reads as ten years to most people. This applies to wording only: leave Geant4 API names such as `SetNumberOfBinsPerDecade` exactly as they are.

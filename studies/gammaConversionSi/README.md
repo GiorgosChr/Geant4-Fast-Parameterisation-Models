@@ -176,8 +176,9 @@ Garwood **Poisson** interval, which stays non-zero for empty bins, rather than t
 approximation. It matters only in the sparse low-count tails; at 1e5 counts per bin the bars are
 invisible.
 
-Several branches span five to ten decades — `thetaElectron` covers 1e-7 to 3 rad, `eRecoil` 2e-9
-to 29 MeV — so those calls pass `logx=True`; on a linear axis they collapse into a single bin.
+Several branches span five to ten orders of magnitude — `thetaElectron` covers 1e-7 to 3 rad,
+`eRecoil` 2e-9 to 29 MeV — so those calls pass `logx=True`; on a linear axis they collapse into a
+single bin.
 
 The setup cell sets `plt.rcParams["mathtext.fallback"] = "stixsans"`. Do not remove it, and do not
 "fix" it by changing `mathtext.fontset`: the ATLAS style maps every math font to TeX Gyre Heros,
@@ -222,8 +223,8 @@ the training split only; calling the model before that raises rather than silent
 unscaled data.
 
 The transform is `log10` then a min-max rescaling onto `[0, 1]`, because every quantity here is
-strictly positive and spans 4.7–12 decades. Rescaling the raw values would leave almost every
-event squashed against zero with rare points far up the range. Working in log space
+strictly positive and spans 4.7–12 orders of magnitude. Rescaling the raw values would leave
+almost every event squashed against zero with rare points far up the range. Working in log space
 also makes `eLead` and `eRecoil` positive by construction, since they are decoded through `10**x`.
 This is *in addition to* the `BatchNorm1d` in each hidden layer, which cannot see the raw physical
 scale because it only ever acts after the first linear layer.
@@ -262,8 +263,8 @@ Geant4 samples the energy sharing and the angles from a distribution, and `G4Bet
 does so over the full five-dimensional final state. A network trained with MSE can only learn the
 conditional *mean*, so it collapses onto it and the loss plateaus at the conditional variance —
 which is exactly what the flat curve shows. `eRecoil` is hit worst because its conditional
-distribution is the broadest, spanning roughly twelve decades and being bimodal between the
-nuclear and triplet cases.
+distribution is the broadest, spanning roughly twelve orders of magnitude and being bimodal
+between the nuclear and triplet cases.
 
 Reproducing these distributions needs a model that **samples** rather than regresses — a
 normalising flow, VAE, GAN, or a quantile/density regression. `nflows` is already in the
