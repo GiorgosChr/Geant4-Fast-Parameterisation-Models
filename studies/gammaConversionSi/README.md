@@ -214,19 +214,23 @@ exact. It is only tens of eV for the ~93 % of conversions that happen on a nucle
 remaining ≈1/(Z+1) the recoil is an atomic electron carrying up to two thirds of the photon
 energy; dropping it would put `eSub` out by more than 100 % on those.
 
-**The normalisation is part of the model**, not the notebook. `input_mu`, `input_sigma`,
-`target_mu`, `target_sigma` are registered as *buffers*, so they are never touched by the
+**The normalisation is part of the model**, not the notebook. `input_min`, `input_max`,
+`target_min`, `target_max` are registered as *buffers*, so they are never touched by the
 optimiser, move with `.to(device)`, and are written into the `state_dict` — a saved checkpoint is
 self-contained, with no scaler to reload alongside it. `fit_normalisation(x, y)` is called once on
 the training split only; calling the model before that raises rather than silently training on
 unscaled data.
 
-The transform is `log10` then standardise, because every quantity here is strictly positive and
-spans 4.7–12 decades. Plain standardisation would leave almost every event squashed against zero
-with rare points tens of sigma out. Working in log space also makes `eLead` and `eRecoil` positive
-by construction, since they are decoded through `10**x`. This is *in addition to* the
-`BatchNorm1d` in each hidden layer, which cannot see the raw physical scale because it only ever
-acts after the first linear layer.
+The transform is `log10` then a min-max rescaling onto `[0, 1]`, because every quantity here is
+strictly positive and spans 4.7–12 decades. Rescaling the raw values would leave almost every
+event squashed against zero with rare points far up the range. Working in log space
+also makes `eLead` and `eRecoil` positive by construction, since they are decoded through `10**x`.
+This is *in addition to* the `BatchNorm1d` in each hidden layer, which cannot see the raw physical
+scale because it only ever acts after the first linear layer.
+
+Because the range comes from the training split, validation and inference values can land just
+outside `[0, 1]`. That is expected, and nothing clamps them — clamping would quietly bias the
+extremes of the spectrum, which is exactly where the model is least constrained.
 
 `training/train_dnn.ipynb` imports the module and trains it. Feature histograms are written to a
 subdirectory of `plots/` named by the `INPUT_PLOT_SUBDIR` global (`training_inputs` by default);

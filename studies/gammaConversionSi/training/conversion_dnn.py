@@ -79,10 +79,14 @@ class ConversionDNN(nn.Module):
 
     Both the inputs and the targets are strictly positive and span between
     five and twelve decades, so the in-model transform is ``log10`` followed by
-    standardisation. Plain standardisation over that range would leave nearly
-    every event squashed against zero with rare points tens of sigma away.
+    a min-max rescaling onto ``[0, 1]``. Rescaling the raw values would leave
+    nearly every event squashed against zero, with rare points far up the range.
     Working in log space also makes the three predicted quantities positive by
     construction, since they are decoded through ``10**x``.
+
+    The range is fitted on the training split, so validation and inference
+    values falling just outside ``[0, 1]`` are expected, not a bug -- nothing
+    clamps them, and clamping would silently bias the extremes of the spectrum.
 
     This is separate from, and in addition to, the batch norm in the hidden
     layers: batch norm cannot see the fixed physical scale of the raw inputs,
@@ -110,10 +114,10 @@ class ConversionDNN(nn.Module):
 
         # Non-trained normalisation constants. Initialised to the identity so
         # the module is usable (if pointless) before fit_normalisation.
-        self.register_buffer("input_mu", torch.zeros(n_in))
-        self.register_buffer("input_sigma", torch.ones(n_in))
-        self.register_buffer("target_mu", torch.zeros(n_out))
-        self.register_buffer("target_sigma", torch.ones(n_out))
+        self.register_buffer("input_min", torch.zeros(n_in))
+        self.register_buffer("input_max", torch.ones(n_in))
+        self.register_buffer("target_min", torch.zeros(n_out))
+        self.register_buffer("target_max", torch.ones(n_out))
         self.register_buffer("fitted", torch.zeros((), dtype=torch.bool))
 
         layers = []
@@ -130,32 +134,38 @@ class ConversionDNN(nn.Module):
     def _log10(values):
         return torch.log10(torch.clamp(values, min=_TINY))
 
+    @staticmethod
+    def _span(low, high):
+        """Denominator of the rescaling, safe for a constant column."""
+        return (high - low).clamp(min=1e-12)
+
     def fit_normalisation(self, x, y):
         """Set the normalisation constants from the training split.
 
         Call this once, on the training data only. Using the full sample would
-        leak the validation set's scale into the model.
+        leak the validation set's range into the model.
         """
         x = torch.as_tensor(x, dtype=torch.float32)
         y = torch.as_tensor(y, dtype=torch.float32)
 
         log_x, log_y = self._log10(x), self._log10(y)
-        self.input_mu.copy_(log_x.mean(dim=0))
-        self.input_sigma.copy_(log_x.std(dim=0).clamp(min=1e-12))
-        self.target_mu.copy_(log_y.mean(dim=0))
-        self.target_sigma.copy_(log_y.std(dim=0).clamp(min=1e-12))
+        self.input_min.copy_(log_x.min(dim=0).values)
+        self.input_max.copy_(log_x.max(dim=0).values)
+        self.target_min.copy_(log_y.min(dim=0).values)
+        self.target_max.copy_(log_y.max(dim=0).values)
         self.fitted.fill_(True)
         return self
 
     def normalise_inputs(self, x):
-        return (self._log10(x) - self.input_mu) / self.input_sigma
+        return (self._log10(x) - self.input_min) / self._span(self.input_min, self.input_max)
 
     def normalise_targets(self, y):
         """Map physical targets into the space the loss is computed in."""
-        return (self._log10(y) - self.target_mu) / self.target_sigma
+        return (self._log10(y) - self.target_min) / self._span(self.target_min, self.target_max)
 
     def denormalise_targets(self, y):
-        return torch.pow(10.0, y * self.target_sigma + self.target_mu)
+        log_y = y * self._span(self.target_min, self.target_max) + self.target_min
+        return torch.pow(10.0, log_y)
 
     # -- forward -----------------------------------------------------------
 
@@ -163,8 +173,9 @@ class ConversionDNN(nn.Module):
         """Raw network output, in the normalised target space.
 
         This is what the loss should be compared against, paired with
-        `normalise_targets`, so that the three outputs contribute comparably
-        despite spanning 5.5, 7.5 and 12 decades in physical units.
+        `normalise_targets`, so that the three outputs each cover [0, 1] and
+        contribute comparably despite spanning 5.5, 7.5 and 12 decades in
+        physical units.
         """
         if not bool(self.fitted):
             raise RuntimeError(
