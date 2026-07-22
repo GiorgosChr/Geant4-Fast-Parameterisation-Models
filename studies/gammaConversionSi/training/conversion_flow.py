@@ -130,8 +130,10 @@ LOSS_TERMS = ("isTriplet", "eRecoil", "eLead", "thetaLead")
 LOSS_WEIGHTS = {name: 1.0 for name in LOSS_TERMS}
 
 #: Default L2 penalty, applied by `ConversionFlow.make_optimiser` to the linear
-#: weights only.
-WEIGHT_DECAY = 1e-5
+#: weights only. Deliberately the same value as `conversion_dnn.WEIGHT_DECAY`,
+#: so the two models are regularised on the same scale and any difference
+#: between them is a difference in model class rather than in penalty.
+WEIGHT_DECAY = 1e-4
 
 
 class ConversionFlow(nn.Module):

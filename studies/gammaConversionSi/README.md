@@ -286,10 +286,9 @@ and triplet cases.
 ### `ConversionFlow` — sampling the final state
 
 `training/conversion_flow.py`, built on `nflows`. Reproducing those distributions needs a model
-that **samples** rather than regresses, and this one learns the conditional density itself.
-
-**Separate heads, chained.** Each quantity has its own network reading a shared trunk over
-`eGamma`:
+that **samples** rather than regresses, and this one learns the conditional density itself. Each
+quantity has its own head reading a shared trunk over `eGamma`, and each later head also sees the
+quantity sampled before it, so the four together are the exact joint density by the chain rule:
 
 ```
 eGamma → log10 → [0,1] → trunk ─┬─► triplet_head   Bernoulli(isTriplet | E)
@@ -298,49 +297,14 @@ eGamma → log10 → [0,1] → trunk ─┬─► triplet_head   Bernoulli(isTri
                                 └─► theta_flow     p(z_theta  | E, z_lead)
 ```
 
-Each later head also sees the quantity sampled before it, so the product of the four is the exact
-joint density by the chain rule rather than an independence approximation. That conditioning is
-not decoration: at fixed `eGamma` the angular scale is `mₑc²/E` *of that lepton*, so `p(θ)`
-genuinely depends on `eLead`, and heads that could not see it would reproduce every 1-D marginal
-while generating wrong (`eLead`, `thetaLead`) pairs. `isTriplet` is sampled first because it is
-what makes `eRecoil` bimodal — conditioning on it leaves each head fitting one smooth unimodal
-shape instead of one spline bridging ~10 orders of magnitude of empty space between two peaks.
+It works in physics-scaled coordinates — energy *fractions* and `θ·E/mₑc²` — which is what makes
+`eSub ≥ 0`, exact energy conservation and `eLead ≥ eSub` structural rather than learned. Each
+head's negative log-likelihood is averaged separately and the four are summed, so no head
+dominates the total and a head that stops learning gets its own flat curve.
 
-Each head is an `nflows` `Flow` over a *one-dimensional* rational-quadratic spline transform. With
-`features=1` the autoregressive masks inside MADE degenerate and the spline parameters come purely
-from the context path, so the transform is exactly a conditional head — assembled from library
-code that is already tested, rather than a hand-rolled `Transform`.
-
-**Physics-scaled coordinates.** The flow does not work in MeV and radians. With
-`S = eGamma − 2mₑc²` the kinetic energy available to share:
-
-| learned coordinate | definition |
-| --- | --- |
-| `z_recoil` | `logit(eRecoil / S)` |
-| `z_lead` | `logit(2·eLead/(S − eRecoil) − 1)` |
-| `z_theta` | `log(thetaLead · eLead / mₑc²)` |
-
-Two properties follow structurally, not from training: `eSub ≥ 0` with energy conservation exact
-for *every* sample, and `eLead ≥ eSub`, so a sample can never violate the sorted-pair convention.
-That is the `ConversionDNN` failure mode removed rather than merely monitored. `θ·E/mₑc²` is the
-natural angular variable, since the Bethe–Heitler angular scale is `mₑc²/E`; working in it strips
-most of the energy dependence out of the target, so the flow learns one nearly universal shape
-instead of a different one at every energy.
-
-The `eGamma` input keeps the `log10` → `[0, 1]` scheme. The three learned coordinates are
-**standardised** instead — a deliberate difference, because the base distribution is a standard
-normal and `tail_bound` is expressed in its units, so anything beyond it lands in the spline's
-linear tails where there is no resolution left. `z_recoil` gets its constants *per mode*, indexed
-by `isTriplet`: the two modes sit ~20 logit units apart and one shared σ would spend the bins on
-the gap between them.
-
-**The loss is formed per head.** Each head's negative log-likelihood is averaged over the batch on
-its own and the four means are then summed, so no head dominates the total through sheer scale,
-and a head that has stopped learning shows up as its own flat curve instead of hiding inside the
-sum. `LOSS_WEIGHTS` in the module is where to rebalance if one does dominate. With every weight at
-1.0 this is numerically the joint NLL — a mean of sums equals a sum of means — so the split costs
-nothing and buys visibility. Note the reported NLL is in the scaled coordinates: it is not a
-likelihood in MeV and radians, and not comparable with the DNN's MSE.
+**[`training/Flow.md`](training/Flow.md) is the detailed reference** — dataset shapes, the
+coordinate maps, the normalisation buffers, layer sizes, the loss and the L2 penalty. Keep it as
+the single source for those, rather than repeating them here.
 
 ```bash
 conda activate g4fastsim
