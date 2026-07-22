@@ -8,5 +8,12 @@ ntuples/
 logs/
 *.root
 
+# Python
+__pycache__/
+.ipynb_checkpoints/
+
+# Generated figures
+plots/
+
 # macOS
 .DS_Store

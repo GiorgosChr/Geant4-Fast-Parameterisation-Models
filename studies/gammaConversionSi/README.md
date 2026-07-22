@@ -157,6 +157,45 @@ print(d["pathInBlock"].mean() / 10, "cm")     # conversion mean free path
 nuclear = d["isTriplet"] == 0
 ```
 
+## Exploring the output
+
+`training/explore_ntuple.ipynb` opens the ntuple with `uproot` and writes **one PDF per branch**
+into `training/plots/` (git-ignored) in the ATLAS style. Nothing is drawn inside the notebook —
+each figure is saved and closed, so the file stays small and diffs stay clean. A single
+`plot_branch(column, xlabel, logy, logx, bins)` helper does the work, driven by one `BRANCHES`
+spec list and a `for` loop. The repository root is found by walking up for `.git`, so it runs
+whatever directory Jupyter was launched from.
+
+```bash
+conda activate g4fastsim
+jupyter lab studies/gammaConversionSi/training/explore_ntuple.ipynb
+```
+
+Histograms are drawn as a black outline with no fill, with `yerr=True` — mplhep's asymmetric
+Garwood **Poisson** interval, which stays non-zero for empty bins, rather than the `√N` Gaussian
+approximation. It matters only in the sparse low-count tails; at 1e5 counts per bin the bars are
+invisible.
+
+Several branches span five to ten decades — `thetaElectron` covers 1e-7 to 3 rad, `eRecoil` 2e-9
+to 29 MeV — so those calls pass `logx=True`; on a linear axis they collapse into a single bin.
+
+The setup cell sets `plt.rcParams["mathtext.fallback"] = "stixsans"`. Do not remove it, and do not
+"fix" it by changing `mathtext.fontset`: the ATLAS style maps every math font to TeX Gyre Heros,
+which has no sized-radical glyph, so the `\sqrt` in the `com` label otherwise logs
+`No TeX to Unicode mapping for '\__radicalbig__'` on every figure and falls back to `?`. Setting
+only the *fallback* fixes the glyph while leaving all other math in the ATLAS font.
+
+Two shapes are worth understanding before reading the plots:
+
+- **`eGamma` is flat from ~3 MeV up.** The gun samples log-uniformly, but the ntuple holds only
+  *converted* photons, so the histogram is the gun spectrum times the conversion probability.
+  With 10 m of silicon that probability is ≥99 % above 3 MeV; only the lowest bin sits low, at
+  92 % of the plateau, where the mean free path just above threshold is still metres. (With the
+  earlier 1 m block this turn-on extended all the way to ~100 MeV.)
+- **`pathInBlock` is concave on a log y-axis, not straight.** A single exponential would be
+  straight; a run spanning 2 MeV–100 GeV superposes one exponential per energy. Use
+  `config/mono1GeV.cfg` for the clean single-exponential version.
+
 ## Validation
 
 Reproduced on this machine with the shipped configs:
