@@ -320,6 +320,26 @@ reproduce, the sampled triplet fraction against 6.67 %, and `min(eSub)`, which m
 Figures go to subdirectories of `plots/` named by `INPUT_PLOT_SUBDIR` and `CLOSURE_PLOT_SUBDIR`;
 weights go to `training/models/` and are git-ignored along with any other `*.pt`.
 
+`EPOCHS` is a ceiling rather than a target: the loop early-stops once the summed validation NLL has
+not improved for `PATIENCE` epochs, rewrites `models/conversion_flow.pt` on every epoch that *does*
+improve, and reloads those best weights before the closure test, so an interrupted run still leaves
+its best model behind. The per-epoch history is pickled beside them as `models/flow_history.pkl`,
+also git-ignored, and the loss curves — one per head plus a combined overview — go to `plots/`.
+
+#### The trained model
+
+100 epochs in 358.2 min on an M-series GPU (214.9 s/epoch); early stopping never fired. Best epoch
+**91**, validation total **+3.601** — per head `isTriplet` 0.245, `eRecoil` 0.703, `eLead` 1.379,
+`thetaLead` 1.276. Those are negative log-likelihoods in the standardised learned coordinates, so
+compare them only with each other and with later runs of this same model.
+
+The closure test on the 3.99 M validation rows gives a sampled triplet fraction of **6.73 %**
+against Geant4's 6.68 % in the same sample, `min(eSub) = 1.5e-4 MeV`, and `eLead ≥ eSub` on every
+sample — the two structural constraints hold, as `from_learned` guarantees they must. The energy
+conservation residual is 3.9e-3 MeV, which is float32 rounding at GeV scale and not a broken
+constraint: `eSub` is computed as the remainder, so the algebra closes exactly and only the
+arithmetic is approximate. Read it the same way as the relative bound in **Validation** below.
+
 ## Validation
 
 Reproduced on this machine with the shipped configs:
