@@ -64,7 +64,7 @@ mono-energetic run.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `material` | `G4_Si` | Any NIST material name |
-| `blockThickness`, `blockWidth` | `1 m` | Full block dimensions (beam axis / transverse) |
+| `blockThickness`, `blockWidth` | `1 m` (`default.cfg` ships `10 m` thickness) | Full block dimensions (beam axis / transverse). Only the thickness matters: the photon is on axis and the pair is killed once recorded, so the width never contains anything |
 | `minEnergy`, `maxEnergy` | `2 MeV`, `10 GeV` | Photon energy, sampled **log-uniformly**; set equal for a mono-energetic run |
 | `nEvents`, `nThreads` | `100000`, `10` | |
 | `model` | `BetheHeitler5D` | Conversion model, see below |
@@ -204,12 +204,18 @@ Reproduced on this machine with the shipped configs:
   deviation of 12.73 cm — the equality is the signature of a clean exponential. Scanning the
   spectrum run shows it falling with energy and flattening at ~12.3 cm, approaching the asymptotic
   (9/7)·X₀ = 12.05 cm for silicon (X₀ = 9.37 cm).
-- **Energy conservation.** `|eElectron + ePositron + eRecoil + 2mₑ − eGamma| < 1e-5 MeV` over all rows.
-- **Geometry.** `zConv == −500 mm + pathInBlock` exactly, confirming the path accumulation.
-- **Triplet fraction.** 6.78 % in silicon, against the expected 1/(Z+1) = 6.67 %.
+- **Energy conservation.** `eElectron + ePositron + eRecoil + 2mₑ = eGamma` holds to a *relative*
+  1.5e-9 typically and 7.6e-7 at worst, over all 9.98 M rows of the shipped 10 m run. Quote it as
+  a relative bound, not an absolute one: the absolute residual scales with photon energy (8e-8 MeV
+  below 20 MeV, 4e-4 MeV above 10 GeV, 7.2e-2 MeV at worst near 100 GeV). That is floating-point
+  rounding through the model's boosts and rotations, not a physics defect.
+- **Geometry.** `zConv == −½·blockThickness + pathInBlock` exactly — bit-for-bit, max deviation
+  0.0 mm — confirming the path accumulation.
+- **Triplet fraction.** 6.67 % in silicon, against the expected 1/(Z+1) = 6.67 %.
 - **Angles.** Median `thetaElectron` ≈ 1.5 mrad at 1 GeV, a few times mₑc²/E = 0.51 mrad, as
   expected for the heavy-tailed Bethe–Heitler distribution; the acoplanarity is broadly
   distributed rather than fixed at π.
-- **Conversion fraction.** 99.96 % at 1 GeV in 1 m of silicon; 91.2 % over 2 MeV–10 GeV, the
-  shortfall coming entirely from the lowest energies where the mean free path exceeds the block
-  thickness. The end-of-run summary prints this number.
+- **Conversion fraction.** 99.96 % at 1 GeV in 1 m of silicon. Over 2 MeV–100 GeV the shipped
+  `default.cfg` gives **99.77 %** in 10 m of silicon, against 93.1 % when the block was 1 m — the
+  shortfall is entirely the lowest energies, where the mean free path is metres. The end-of-run
+  summary prints this number.
