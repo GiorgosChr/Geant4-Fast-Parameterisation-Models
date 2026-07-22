@@ -108,12 +108,10 @@ __all__ = [
 ]
 
 #: Floor applied before log10 and log, guarding against a zero-valued sample.
+#: The only floor in the coordinate maps: both logits are built from logs of
+#: energies rather than from a fraction, so nothing needs clamping away from
+#: the ends of the unit interval. See `ConversionFlow.to_learned`.
 _TINY = 1e-30
-
-#: Keeps the logit finite at the ends of the unit interval. It only ever bites
-#: on a row whose recoil is exactly zero, or whose two leptons are exactly
-#: equal -- neither of which the 5D model actually produces.
-_EPS = 1e-7
 
 #: Order the loss terms are reported in: the order they are sampled in.
 LOSS_TERMS = ("isTriplet", "eRecoil", "eLead", "thetaLead")
@@ -249,9 +247,8 @@ class ConversionFlow(nn.Module):
         return torch.log10(torch.clamp(values, min=_TINY))
 
     @staticmethod
-    def _logit(fraction):
-        fraction = fraction.clamp(_EPS, 1.0 - _EPS)
-        return torch.log(fraction) - torch.log1p(-fraction)
+    def _log(values):
+        return torch.log(torch.clamp(values, min=_TINY))
 
     @staticmethod
     def _available_energy(e_gamma):
@@ -263,18 +260,31 @@ class ConversionFlow(nn.Module):
 
         Returns the three unstandardised coordinates ``(z_recoil, z_lead,
         z_theta)``, each of shape (N,).
+
+        Both logits are formed as a *difference of logs* rather than by
+        computing the fraction and taking ``log(f) - log1p(-f)``. That is not
+        cosmetic. A nuclear recoil of tens of eV against an available energy of
+        up to 100 GeV gives ``f_recoil`` between 1e-8 and 1e-14, so any
+        epsilon-clamped logit large enough to be safe near ``f = 1`` flattens
+        the entire nuclear mode -- 93% of the sample -- onto one value, leaving
+        it with no width for the per-mode standardisation to measure. Working
+        from the energies keeps every one of those rows distinct, and needs no
+        floor beyond the shared `_TINY`.
         """
         e_gamma = x[:, 0]
         e_lead, theta_lead, e_recoil = y[:, 0], y[:, 1], y[:, 2]
 
         total = self._available_energy(e_gamma)
         shared = torch.clamp(total - e_recoil, min=_TINY)  # eLead + eSub
+        e_sub = torch.clamp(shared - e_lead, min=_TINY)
 
-        z_recoil = self._logit(e_recoil / total)
+        # logit(eRecoil / S) == log(eRecoil) - log(S - eRecoil)
+        z_recoil = self._log(e_recoil) - self._log(shared)
         # eLead >= eSub by construction of the dataset, so eLead / (eLead + eSub)
-        # lives in [0.5, 1); 2f - 1 maps that onto the unit interval.
-        z_lead = self._logit(2.0 * (e_lead / shared) - 1.0)
-        z_theta = torch.log(torch.clamp(theta_lead * e_lead / ELECTRON_MASS, min=_TINY))
+        # lives in [0.5, 1) and 2f - 1 maps that onto the unit interval; its
+        # logit is log(eLead - eSub) - log(2*eSub).
+        z_lead = self._log(e_lead - e_sub) - self._log(2.0 * e_sub)
+        z_theta = self._log(theta_lead * e_lead / ELECTRON_MASS)
 
         return z_recoil, z_lead, z_theta
 

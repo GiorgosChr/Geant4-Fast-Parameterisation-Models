@@ -106,10 +106,24 @@ training**:
 Working in it strips most of the energy dependence out of the target, so the flow learns one nearly
 universal shape instead of a different one at every energy.
 
-Two guards, both in the module: `_TINY = 1e-30` floors anything about to be logged, and
-`_EPS = 1e-7` clamps fractions away from the ends of the unit interval before the logit. The `_EPS`
-clamp only bites on a row whose recoil is exactly zero or whose two leptons are exactly equal,
-neither of which the 5D model actually produces.
+### Why the logits are differences of logs
+
+The table states the maps as logits of fractions, but `to_learned()` never forms the fraction. It
+computes
+
+```
+z_recoil = log(eRecoil) − log(S − eRecoil)
+z_lead   = log(eLead − eSub) − log(2·eSub)
+```
+
+which is the same quantity, evaluated from energies instead. The reason is the nuclear mode. A
+recoil of tens of eV against an available energy of up to 100 GeV gives `f_recoil` between 1e-8 and
+1e-14, so a `logit(f)` guarded by an epsilon big enough to be safe near `f = 1` — anything around
+1e-7, which is already float32's resolution there — clamps **every nuclear row onto one value**.
+The mode then has no width for the per-mode standardisation to measure, `recoil_sigma[0]` falls to
+its 1e-12 floor, and 93 % of the sample carries no recoil information at all. Nothing crashes; the
+model simply trains on a delta function. Working from the energies keeps those rows distinct and
+needs no floor beyond `_TINY = 1e-30`, the single guard applied before every log.
 
 ## Normalisation buffers
 
