@@ -3,10 +3,6 @@
 Reference for `conversion_flow.py` and the dataset it consumes from `conversion_data.py`. The
 companion notebook is `train_flow.ipynb`.
 
-> **No results here.** The model has not been trained yet, so this document describes structure and
-> configuration only — no losses, no closure numbers, no timings. Anything measured belongs in the
-> study README's validation section once a run exists.
-
 ## What it is
 
 A **conditional normalising flow** over the γ → e⁺e⁻ final state: given the incident photon
@@ -202,8 +198,7 @@ transform is therefore exactly a conditional head — assembled from library cod
 tested, rather than a hand-rolled `Transform`.
 
 The MADE output width is `3·num_bins − 1 = 47` for linear tails: 16 bin widths, 16 bin heights and
-15 interior knot derivatives. The total parameter count is printed by the notebook's split cell;
-it is not quoted here rather than guessed at.
+15 interior knot derivatives. The notebook's split cell prints the total parameter count.
 
 ## Loss
 

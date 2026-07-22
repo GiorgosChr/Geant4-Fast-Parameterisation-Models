@@ -10,6 +10,8 @@ Start every reply with "Giorgos".
 
 **Never attribute commits to Claude.** Do not add a `Co-Authored-By: Claude …` trailer, a "Generated with Claude Code" line, or any similar marker to commit messages or PR descriptions — the user is the sole author of record. This overrides the default commit-trailer behaviour.
 
+**Commit messages are the subject line only — no body.** Write one summary line and stop; do not follow it with a blank line and explanatory paragraphs, and do not offer to add them. If a change feels too large to summarise in one line, split it into more commits rather than writing a description.
+
 ## Repository state
 
 The repo holds `README.md`, `LICENSE`, two upstream source trees vendored as git submodules, and `studies/` — self-contained preliminary studies, each its own CMake project. No fast-simulation model of the project's own exists yet; it will be written at the repo root, alongside (not inside) the submodules.
