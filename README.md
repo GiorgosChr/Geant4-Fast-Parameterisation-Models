@@ -16,6 +16,21 @@ Geant4 fast parameterisation examples and utilities for implementing, testing, a
   Run configuration comes from a `key = value` file; output files are auto-named from the material,
   energy range and event count and collected under `ntuples/`.
 
+## Analysis environment
+
+`environment.yml` describes a conda environment for analysing the `.root` output and for training
+the ML models behind a parameterisation:
+
+```bash
+conda env create -f environment.yml
+conda activate g4fastsim
+```
+
+Nothing in this repository needs it to build or run — Geant4 writes its ntuples through bundled
+g4tools, and the studies are plain C++ applications. It carries ROOT, uproot/awkward, the Scikit-HEP
+stack, and **PyTorch as the only deep-learning framework**; there is no TensorFlow or Keras, which
+is what allows numpy to stay on the current 2.x series.
+
 ## Dependencies
 
 The Geant4 toolkit itself is vendored as a git submodule at `geant4/` (currently `v11.5.0.beta`), so the dependencies below are those needed to *build* it and any application in this repo.

@@ -1,0 +1,90 @@
+# Conda environment for analysing this project's Geant4 output and for training
+# the ML models behind a fast-simulation parameterisation.
+#
+#   conda env create -f environment.yml
+#   conda activate g4fastsim
+#
+# Nothing in this repository needs it to build or run: Geant4 writes its .root
+# files through bundled g4tools, and the studies are plain C++ applications.
+# This is for the analysis and training side.
+#
+# Derived from the macos-hep environment, with two deliberate changes:
+#
+#  - No TensorFlow or Keras. PyTorch is the only deep-learning framework here.
+#    In macos-hep the two coexisted, and tensorflow 2.16 (which requires
+#    numpy < 2) had been pip-installed on top of a conda numpy 2.2, silently
+#    downgrading it to 1.26.4. Dropping TensorFlow is what lets numpy stay on
+#    the current 2.x series.
+#  - Packages come from conda wherever conda-forge has them, rather than being
+#    split between conda and pip. Mixing the two is what produced the numpy
+#    downgrade above. Only pylorentz, which conda-forge does not carry, is
+#    installed with pip.
+#
+# conda-forge only, no defaults: ROOT and its dependencies are built against
+# the conda-forge toolchain, and mixing the two channels is a common source of
+# unsolvable environments and ABI mismatches.
+
+name: g4fastsim
+
+channels:
+  - conda-forge
+  - nodefaults
+
+dependencies:
+  # Core
+  - python=3.11
+  - pip
+  # Floor rather than an exact pin, so the solver takes the newest 2.x that
+  # every other package agrees on. The floor documents that anything below it
+  # means TensorFlow has crept back in and dragged numpy down with it.
+  - numpy>=2.2
+  - scipy
+  - pandas
+  - libcxx
+
+  # HEP
+  - root
+  - uproot
+  - awkward
+  - hepstats
+  - hepunits
+  - iminuit
+  - pyhf
+  - particle
+  - mplhep
+  - boost-histogram
+
+  # Machine learning -- PyTorch only
+  - pytorch
+  - torchvision
+  # torchaudio is deliberately absent. It is of no use for shower
+  # parameterisation, and on conda-forge it pulls torchcodec -> ffmpeg ->
+  # the whole OpenVINO plugin family, two members of which are
+  # libopenvino-tensorflow-frontend and -tensorflow-lite-frontend. Those are
+  # C++ model-import shims rather than TensorFlow itself, but they are 43
+  # extra packages carrying the name for no benefit here. Add it back if you
+  # ever need it.
+  - scikit-learn
+  - xgboost
+  - shap
+  - nflows
+
+  # Storage formats
+  - h5py
+  - pyarrow
+  - fastparquet
+
+  # Plotting and notebooks
+  - matplotlib
+  - seaborn
+  - scienceplots
+  - ipython
+  - ipykernel
+  - jupyter_client
+  - jupyter_core
+  - pydot
+  - rich
+
+  # Not packaged on conda-forge
+  - pip:
+      - pylorentz
