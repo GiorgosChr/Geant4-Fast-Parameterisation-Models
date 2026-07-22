@@ -199,21 +199,38 @@ Two shapes are worth understanding before reading the plots:
 
 ## Training a model
 
-`training/conversion_dnn.py` holds `ConversionDNN`, a fully connected network, and
-`build_dataset()`, which turns the raw ntuple arrays into its inputs and targets. The pair is
-sorted by energy rather than by charge, so the network never has to learn the arbitrary e⁻/e⁺
-labelling:
+`training/conversion_data.py` holds `build_dataset()`, shared by both models: it turns the raw
+ntuple arrays into inputs and targets, sorting the pair by energy rather than by charge so no
+model has to learn the arbitrary e⁻/e⁺ labelling.
 
 | | |
 | --- | --- |
-| inputs (2) | `eGamma`, `pathInBlock` |
-| predicted (3) | `eLead`, `thetaLead`, `eRecoil` |
+| input (1) | `eGamma` |
+| predicted / sampled (3) | `eLead`, `thetaLead`, `eRecoil` |
+| conversion mode | `isTriplet` |
 | derived in-model | `eSub = eGamma − 2mₑc² − eLead − eRecoil` |
 
-`eRecoil` is predicted rather than assumed negligible, which is what makes the conservation step
+`eRecoil` is a target rather than assumed negligible, which is what makes the conservation step
 exact. It is only tens of eV for the ~93 % of conversions that happen on a nucleus, but for the
 remaining ≈1/(Z+1) the recoil is an atomic electron carrying up to two thirds of the photon
 energy; dropping it would put `eSub` out by more than 100 % on those.
+
+**`pathInBlock` is deliberately not an input.** Given that a conversion happened, the final state
+depends on the photon energy and the material — not on *where* in the block it happened. The
+vertex is sampled independently, from the attenuation length, so the path is a nuisance variable
+the target does not depend on, and feeding it in only asks the network to learn that it should be
+ignored. In fast simulation Geant4 supplies the vertex itself through the interaction length; a
+model of the conversion has to supply kinematics and nothing else.
+
+Two models are built on that dataset. **`ConversionFlow` is the one to use**; `ConversionDNN` is
+kept as the baseline that demonstrates why.
+
+### `ConversionDNN` — the regression baseline
+
+`training/conversion_dnn.py`. A shared trunk over `eGamma` feeding **one head per target**, each
+head with a hidden layer of its own. Note that a single *linear* layer per target would have been
+no different from one 3-wide output layer — the rows of that matrix are already independent — so
+it is the hidden layer that actually gives each target its own nonlinearity.
 
 **The normalisation is part of the model**, not the notebook. `input_min`, `input_max`,
 `target_min`, `target_max` are registered as *buffers*, so they are never touched by the
@@ -226,16 +243,16 @@ The transform is `log10` then a min-max rescaling onto `[0, 1]`, because every q
 strictly positive and spans 4.7–12 orders of magnitude. Rescaling the raw values would leave
 almost every event squashed against zero with rare points far up the range. Working in log space
 also makes `eLead` and `eRecoil` positive by construction, since they are decoded through `10**x`.
-This is *in addition to* the `BatchNorm1d` in each hidden layer, which cannot see the raw physical
+This is *in addition to* the `BatchNorm1d` in each trunk layer, which cannot see the raw physical
 scale because it only ever acts after the first linear layer.
 
 Because the range comes from the training split, validation and inference values can land just
 outside `[0, 1]`. That is expected, and nothing clamps them — clamping would quietly bias the
 extremes of the spectrum, which is exactly where the model is least constrained.
 
-`training/train_dnn.ipynb` imports the module and trains it. Feature histograms are written to a
-subdirectory of `plots/` named by the `INPUT_PLOT_SUBDIR` global (`training_inputs` by default);
-weights go to `training/models/` and are git-ignored along with any other `*.pt`.
+L2 regularisation comes from `make_optimiser()`, which penalises the weight matrices and exempts
+biases and batch-norm affine parameters: shrinking a bias only displaces a layer's output, and
+shrinking a batch-norm scale fights the normalisation that layer exists to apply.
 
 ```bash
 conda activate g4fastsim
@@ -245,7 +262,7 @@ jupyter lab studies/gammaConversionSi/training/train_dnn.ipynb
 A full run is 20 epochs over ~8 M training rows, about 13 minutes on an M-series GPU. Set
 `MAX_EVENTS` to a few hundred thousand to iterate quickly.
 
-### A plain regression network does not solve this problem
+#### A plain regression network does not solve this problem
 
 Worth knowing before spending time on it. Trained as above, the loss is flat from the first epoch
 and the median fractional errors on the validation set are:
@@ -258,19 +275,86 @@ and the median fractional errors on the validation set are:
 
 That is not a bug in the network or the normalisation — energy conservation still closes to
 0.0 MeV and no validation event has `eSub < 0`. It is the model class being wrong for the task.
-Given `eGamma` and `pathInBlock`, the pair kinematics are **not a deterministic function**:
-Geant4 samples the energy sharing and the angles from a distribution, and `G4BetheHeitler5DModel`
-does so over the full five-dimensional final state. A network trained with MSE can only learn the
-conditional *mean*, so it collapses onto it and the loss plateaus at the conditional variance —
-which is exactly what the flat curve shows. `eRecoil` is hit worst because its conditional
-distribution is the broadest, spanning roughly twelve orders of magnitude and being bimodal
-between the nuclear and triplet cases.
+Given `eGamma`, the pair kinematics are **not a deterministic function**: Geant4 samples the
+energy sharing and the angles from a distribution, and `G4BetheHeitler5DModel` does so over the
+full five-dimensional final state. A network trained with MSE can only learn the conditional
+*mean*, so it collapses onto it and the loss plateaus at the conditional variance — which is
+exactly what the flat curve shows. `eRecoil` is hit worst because its conditional distribution is
+the broadest, spanning roughly twelve orders of magnitude and being bimodal between the nuclear
+and triplet cases.
 
-Reproducing these distributions needs a model that **samples** rather than regresses — a
-normalising flow, VAE, GAN, or a quantile/density regression. `nflows` is already in the
-`g4fastsim` environment for that. `ConversionDNN` is still useful as the scaffolding: the
-normalisation buffers, the sorted-pair dataset builder and the in-model conservation step all
-carry over unchanged.
+### `ConversionFlow` — sampling the final state
+
+`training/conversion_flow.py`, built on `nflows`. Reproducing those distributions needs a model
+that **samples** rather than regresses, and this one learns the conditional density itself.
+
+**Separate heads, chained.** Each quantity has its own network reading a shared trunk over
+`eGamma`:
+
+```
+eGamma → log10 → [0,1] → trunk ─┬─► triplet_head   Bernoulli(isTriplet | E)
+                                ├─► recoil_flow    p(z_recoil | E, isTriplet)
+                                ├─► lead_flow      p(z_lead   | E, z_recoil)
+                                └─► theta_flow     p(z_theta  | E, z_lead)
+```
+
+Each later head also sees the quantity sampled before it, so the product of the four is the exact
+joint density by the chain rule rather than an independence approximation. That conditioning is
+not decoration: at fixed `eGamma` the angular scale is `mₑc²/E` *of that lepton*, so `p(θ)`
+genuinely depends on `eLead`, and heads that could not see it would reproduce every 1-D marginal
+while generating wrong (`eLead`, `thetaLead`) pairs. `isTriplet` is sampled first because it is
+what makes `eRecoil` bimodal — conditioning on it leaves each head fitting one smooth unimodal
+shape instead of one spline bridging ~10 orders of magnitude of empty space between two peaks.
+
+Each head is an `nflows` `Flow` over a *one-dimensional* rational-quadratic spline transform. With
+`features=1` the autoregressive masks inside MADE degenerate and the spline parameters come purely
+from the context path, so the transform is exactly a conditional head — assembled from library
+code that is already tested, rather than a hand-rolled `Transform`.
+
+**Physics-scaled coordinates.** The flow does not work in MeV and radians. With
+`S = eGamma − 2mₑc²` the kinetic energy available to share:
+
+| learned coordinate | definition |
+| --- | --- |
+| `z_recoil` | `logit(eRecoil / S)` |
+| `z_lead` | `logit(2·eLead/(S − eRecoil) − 1)` |
+| `z_theta` | `log(thetaLead · eLead / mₑc²)` |
+
+Two properties follow structurally, not from training: `eSub ≥ 0` with energy conservation exact
+for *every* sample, and `eLead ≥ eSub`, so a sample can never violate the sorted-pair convention.
+That is the `ConversionDNN` failure mode removed rather than merely monitored. `θ·E/mₑc²` is the
+natural angular variable, since the Bethe–Heitler angular scale is `mₑc²/E`; working in it strips
+most of the energy dependence out of the target, so the flow learns one nearly universal shape
+instead of a different one at every energy.
+
+The `eGamma` input keeps the `log10` → `[0, 1]` scheme. The three learned coordinates are
+**standardised** instead — a deliberate difference, because the base distribution is a standard
+normal and `tail_bound` is expressed in its units, so anything beyond it lands in the spline's
+linear tails where there is no resolution left. `z_recoil` gets its constants *per mode*, indexed
+by `isTriplet`: the two modes sit ~20 logit units apart and one shared σ would spend the bins on
+the gap between them.
+
+**The loss is formed per head.** Each head's negative log-likelihood is averaged over the batch on
+its own and the four means are then summed, so no head dominates the total through sheer scale,
+and a head that has stopped learning shows up as its own flat curve instead of hiding inside the
+sum. `LOSS_WEIGHTS` in the module is where to rebalance if one does dominate. With every weight at
+1.0 this is numerically the joint NLL — a mean of sums equals a sum of means — so the split costs
+nothing and buys visibility. Note the reported NLL is in the scaled coordinates: it is not a
+likelihood in MeV and radians, and not comparable with the DNN's MSE.
+
+```bash
+conda activate g4fastsim
+jupyter lab studies/gammaConversionSi/training/train_flow.ipynb
+```
+
+The notebook ends in a **closure test**, which is what replaces the DNN's per-event error table —
+there is no right answer per event, only a right distribution. It draws one sample per validation
+row at that row's true `eGamma` and compares: the four marginals with ratio panels, the same
+marginals inside narrow `eGamma` slices (an inclusive marginal can look right while every
+individual energy is wrong), the `eLead`–`thetaLead` correlation the chained heads exist to
+reproduce, the sampled triplet fraction against 6.67 %, and `min(eSub)`, which must be ≥ 0.
+Figures go to subdirectories of `plots/` named by `INPUT_PLOT_SUBDIR` and `CLOSURE_PLOT_SUBDIR`;
+weights go to `training/models/` and are git-ignored along with any other `*.pt`.
 
 ## Validation
 
