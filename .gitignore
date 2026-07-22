@@ -12,6 +12,9 @@ logs/
 __pycache__/
 .ipynb_checkpoints/
 
+# Trained model weights
+*.pt
+
 # Generated figures
 plots/
 

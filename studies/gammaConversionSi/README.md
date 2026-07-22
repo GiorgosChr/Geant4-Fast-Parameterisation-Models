@@ -196,6 +196,77 @@ Two shapes are worth understanding before reading the plots:
   straight; a run spanning 2 MeV–100 GeV superposes one exponential per energy. Use
   `config/mono1GeV.cfg` for the clean single-exponential version.
 
+## Training a model
+
+`training/conversion_dnn.py` holds `ConversionDNN`, a fully connected network, and
+`build_dataset()`, which turns the raw ntuple arrays into its inputs and targets. The pair is
+sorted by energy rather than by charge, so the network never has to learn the arbitrary e⁻/e⁺
+labelling:
+
+| | |
+| --- | --- |
+| inputs (2) | `eGamma`, `pathInBlock` |
+| predicted (3) | `eLead`, `thetaLead`, `eRecoil` |
+| derived in-model | `eSub = eGamma − 2mₑc² − eLead − eRecoil` |
+
+`eRecoil` is predicted rather than assumed negligible, which is what makes the conservation step
+exact. It is only tens of eV for the ~93 % of conversions that happen on a nucleus, but for the
+remaining ≈1/(Z+1) the recoil is an atomic electron carrying up to two thirds of the photon
+energy; dropping it would put `eSub` out by more than 100 % on those.
+
+**The normalisation is part of the model**, not the notebook. `input_mu`, `input_sigma`,
+`target_mu`, `target_sigma` are registered as *buffers*, so they are never touched by the
+optimiser, move with `.to(device)`, and are written into the `state_dict` — a saved checkpoint is
+self-contained, with no scaler to reload alongside it. `fit_normalisation(x, y)` is called once on
+the training split only; calling the model before that raises rather than silently training on
+unscaled data.
+
+The transform is `log10` then standardise, because every quantity here is strictly positive and
+spans 4.7–12 decades. Plain standardisation would leave almost every event squashed against zero
+with rare points tens of sigma out. Working in log space also makes `eLead` and `eRecoil` positive
+by construction, since they are decoded through `10**x`. This is *in addition to* the
+`BatchNorm1d` in each hidden layer, which cannot see the raw physical scale because it only ever
+acts after the first linear layer.
+
+`training/train_dnn.ipynb` imports the module and trains it. Feature histograms are written to a
+subdirectory of `plots/` named by the `INPUT_PLOT_SUBDIR` global (`training_inputs` by default);
+weights go to `training/models/` and are git-ignored along with any other `*.pt`.
+
+```bash
+conda activate g4fastsim
+jupyter lab studies/gammaConversionSi/training/train_dnn.ipynb
+```
+
+A full run is 20 epochs over ~8 M training rows, about 13 minutes on an M-series GPU. Set
+`MAX_EVENTS` to a few hundred thousand to iterate quickly.
+
+### A plain regression network does not solve this problem
+
+Worth knowing before spending time on it. Trained as above, the loss is flat from the first epoch
+and the median fractional errors on the validation set are:
+
+| target | median fractional error |
+| --- | --- |
+| `eLead` | 0.16 |
+| `thetaLead` | 0.53 |
+| `eRecoil` | 1.00 |
+
+That is not a bug in the network or the normalisation — energy conservation still closes to
+0.0 MeV and no validation event has `eSub < 0`. It is the model class being wrong for the task.
+Given `eGamma` and `pathInBlock`, the pair kinematics are **not a deterministic function**:
+Geant4 samples the energy sharing and the angles from a distribution, and `G4BetheHeitler5DModel`
+does so over the full five-dimensional final state. A network trained with MSE can only learn the
+conditional *mean*, so it collapses onto it and the loss plateaus at the conditional variance —
+which is exactly what the flat curve shows. `eRecoil` is hit worst because its conditional
+distribution is the broadest, spanning roughly twelve decades and being bimodal between the
+nuclear and triplet cases.
+
+Reproducing these distributions needs a model that **samples** rather than regresses — a
+normalising flow, VAE, GAN, or a quantile/density regression. `nflows` is already in the
+`g4fastsim` environment for that. `ConversionDNN` is still useful as the scaffolding: the
+normalisation buffers, the sorted-pair dataset builder and the in-model conservation step all
+carry over unchanged.
+
 ## Validation
 
 Reproduced on this machine with the shipped configs:
