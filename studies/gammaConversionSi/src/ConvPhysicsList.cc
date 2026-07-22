@@ -3,14 +3,16 @@
 
 #include "ConvPhysicsList.hh"
 
+#include "G4BaryonConstructor.hh"
 #include "G4BetheHeitler5DModel.hh"
-#include "G4Electron.hh"
+#include "G4BosonConstructor.hh"
 #include "G4EmParameters.hh"
-#include "G4Gamma.hh"
 #include "G4GammaConversion.hh"
-#include "G4GenericIon.hh"
 #include "G4IonConstructor.hh"
+#include "G4LeptonConstructor.hh"
+#include "G4MesonConstructor.hh"
 #include "G4ParticleDefinition.hh"
+#include "G4ShortLivedConstructor.hh"
 #include "G4Positron.hh"
 #include "G4ProcessManager.hh"
 #include "G4ProductionCutsTable.hh"
@@ -36,15 +38,35 @@ ConvPhysicsList::ConvPhysicsList(const G4String& aModel, G4int aConversionType)
 
 void ConvPhysicsList::ConstructParticle()
 {
-  G4Gamma::GammaDefinition();
-  G4Electron::ElectronDefinition();
-  G4Positron::PositronDefinition();
+  // The full standard set, as TestEm14 and the other single-process EM studies
+  // do. Only gamma, e- and e+ ever appear in an event -- what makes this study
+  // single-process is ConstructProcess(), not a short particle list.
+  //
+  // Defining them all is what keeps the output clean. G4BetheHeitler5DModel
+  // builds its recoil nucleus through G4IonTable, so GenericIon has to exist
+  // (otherwise every event warns "PART105: Can not create ions"); but once it
+  // does, G4RunManagerKernel::SetupPhysics() unconditionally calls
+  // G4IonConstructor::ConstructParticle(), which defines the hypernuclei, and
+  // building their decay tables warns about every daughter that is missing.
+  // Declaring only the daughters named in those warnings does not converge --
+  // each one drags in its own decay products in turn.
+  G4BosonConstructor bosonConstructor;
+  bosonConstructor.ConstructParticle();
 
-  // G4BetheHeitler5DModel emits the recoiling nucleus as a third secondary and
-  // builds it through G4IonTable, which needs GenericIon to exist first
-  G4GenericIon::GenericIonDefinition();
+  G4LeptonConstructor leptonConstructor;
+  leptonConstructor.ConstructParticle();
+
+  G4MesonConstructor mesonConstructor;
+  mesonConstructor.ConstructParticle();
+
+  G4BaryonConstructor baryonConstructor;
+  baryonConstructor.ConstructParticle();
+
   G4IonConstructor ionConstructor;
   ionConstructor.ConstructParticle();
+
+  G4ShortLivedConstructor shortLivedConstructor;
+  shortLivedConstructor.ConstructParticle();
 }
 
 void ConvPhysicsList::ConstructProcess()

@@ -1,4 +1,8 @@
 # Interactive session: draw the block and a handful of conversions.
+#
+# Single-threaded on purpose: a 20 event run spread over every core gains
+# nothing and only makes Geant4 warn that it had to reduce the event modulo.
+/run/numberOfThreads 1
 /run/initialize
 
 /vis/open

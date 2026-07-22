@@ -7,6 +7,8 @@
 #include "G4AnalysisManager.hh"
 #include "G4Run.hh"
 
+#include <filesystem>
+
 ConvRunAction::ConvRunAction()
 {
   auto accumulableManager = G4AccumulableManager::Instance();
@@ -15,7 +17,11 @@ ConvRunAction::ConvRunAction()
 
   auto analysisManager = G4AnalysisManager::Instance();
   analysisManager->SetDefaultFileType("root");
-  analysisManager->SetFileName("gammaConversionSi");
+  // Fallback name for runs not driven by a config file (interactive, macro);
+  // a config run overrides it through /analysis/setFileName. Kept inside
+  // ntuples/ so that output never lands loose in the working directory.
+  std::filesystem::create_directories("ntuples");
+  analysisManager->SetFileName("ntuples/gammaConversionSi");
   analysisManager->SetNtupleMerging(true);
   analysisManager->SetVerboseLevel(0);
 

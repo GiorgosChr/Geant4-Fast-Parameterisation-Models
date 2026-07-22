@@ -112,6 +112,19 @@ nucleus; in a fraction ≈ 1/(Z+1) of cases (6.7 % in silicon) the photon conver
 electron instead and the recoil is a second electron. Those **triplet** events are flagged by
 `isTriplet` and can be removed with `conversionType = nuclear`.
 
+### Why the particle list is not minimal
+
+`ConvPhysicsList::ConstructParticle()` builds the full standard particle set, which looks at odds
+with a single-process study. Only gamma, e⁻ and e⁺ ever appear in an event — what makes this study
+single-process is `ConstructProcess()`, which registers `G4GammaConversion` and nothing else. The
+rest are inert.
+
+They are there to keep the output readable. The 5D model needs `GenericIon` defined, but once it
+is, `G4RunManagerKernel::SetupPhysics()` unconditionally defines the hypernuclei too, and building
+their decay tables warns about every daughter that is missing — 38 lines at the head of every run.
+Declaring only the named daughters does not converge, because each one drags in its own decay
+products in turn.
+
 ## Ntuple `conversions`
 
 One row per **converting** event; photons that leave the block without converting write no row and
