@@ -309,6 +309,10 @@ not that the model is undertrained.
   not comparable with the MSE `ConversionDNN` reports. Only compare it with itself.
 - **Checkpoints are tied to the buffer shapes.** Changing the coordinate set or the per-mode recoil
   constants invalidates every saved `*.pt`.
+- **`nflows` bases are float64, and MPS has no float64.** `StandardNormal` registers its
+  log-normaliser as a float64 buffer, so `ConversionFlow().to("mps")` would die with *"Cannot
+  convert a MPS Tensor to float64 dtype"*. The constructor ends with `self.float()` to prevent it;
+  that also stops the one double-precision constant promoting every log-density on CPU.
 - **Do not use `nflows`' LU, QR or `NaiveLinear` transforms.** They call `torch.solve` /
   `torch.triangular_solve`, removed in torch ≥ 2.0. The calls sit inside method bodies, so
   importing the package is safe — only *using* those transforms breaks. Nothing here needs them:

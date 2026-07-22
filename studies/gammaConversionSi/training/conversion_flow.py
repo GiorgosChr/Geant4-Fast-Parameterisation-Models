@@ -212,6 +212,13 @@ class ConversionFlow(nn.Module):
         self.lead_flow = spline_head()
         self.theta_flow = spline_head()
 
+        # `StandardNormal` registers its log-normaliser as float64, and MPS has
+        # no float64 at all -- without this, `ConversionFlow().to("mps")` dies
+        # with "Cannot convert a MPS Tensor to float64 dtype". It matters on CPU
+        # too: that one float64 constant would otherwise promote every
+        # log-density, and the loss with it, to double precision.
+        self.float()
+
     # -- optimisation ------------------------------------------------------
 
     def make_optimiser(self, lr=1e-3, weight_decay=WEIGHT_DECAY):
