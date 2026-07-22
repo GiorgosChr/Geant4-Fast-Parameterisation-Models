@@ -276,7 +276,8 @@ Current globals in `train_flow.ipynb`:
 | `MAX_EVENTS` | `None` | all 9,977,028 converted rows |
 | `VAL_FRACTION` | `0.4` | 3,990,811 validation / 5,986,217 training rows |
 | `BATCH_SIZE` | `1024` | 5,846 optimiser steps per epoch |
-| `EPOCHS` | `50` | ≈292,300 steps in total |
+| `EPOCHS` | `100` | ≈584,600 steps if it runs to the end |
+| `PATIENCE` | `10` | early stopping — see below |
 | `LEARNING_RATE` | `1e-5` | passed to `make_optimiser`, which supplies the `1e-4` decay |
 | `SEED` | `0` | seeds `torch` and the NumPy generator that makes the split |
 
@@ -285,6 +286,34 @@ The split is a single shuffle: `rng.permutation(N)`, first 40 % validation, rema
 
 Validation runs in chunks of 131,072 rows (`evaluate(..., chunk=)`) — the validation split here is
 ~4 M rows, and one batch of that would allocate gigabytes of hidden activations at once.
+
+### Early stopping and what a run leaves behind
+
+The loop tracks the **summed validation NLL**. Every epoch that improves on the best so far writes
+`models/conversion_flow.pt` immediately, so an interrupted run still leaves the best model behind
+rather than whatever the last epoch drifted to. After `PATIENCE = 10` epochs with no improvement
+the loop breaks, and the best weights are loaded back into `model` — so the closure test and
+everything else downstream run on the best epoch, not the last one.
+
+`EPOCHS` is therefore a ceiling, not a target: the run ends at whichever comes first.
+
+Both splits' per-head NLLs are recorded every epoch, and the **validation** ones are shown in
+brackets on the epoch line, so a stalling head is visible while the run is going rather than only
+afterwards. The train-side per-head values are recorded but not printed. At the end, `history` is
+pickled to `models/flow_history.pkl` with these keys:
+
+| key | contents |
+| --- | --- |
+| `train`, `val` | summed NLL per epoch, one list each |
+| `train_terms`, `val_terms` | dict of `LOSS_TERMS → list`, per epoch, for both splits |
+| `seconds` | wall-clock per epoch, training plus validation |
+| `best_epoch`, `best_val` | which epoch the saved weights come from, and its score |
+| `epochs_run` | how many epochs actually ran, ≤ `EPOCHS` |
+
+Six figures go to `plots/`: `flow_loss_total.pdf` and one `flow_loss_<head>.pdf` per head, each
+with train in black and validation in red, plus `flow_loss_overview.pdf` carrying both totals and
+all four validation curves on one pair of axes — which is what shows a head going flat while the
+total still falls because another head is carrying it. All mark the best epoch with a dotted rule.
 
 ## Sampling
 

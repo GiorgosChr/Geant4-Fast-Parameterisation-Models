@@ -12,8 +12,9 @@ logs/
 __pycache__/
 .ipynb_checkpoints/
 
-# Trained model weights
+# Trained model weights and training histories
 *.pt
+*.pkl
 
 # Generated figures
 plots/
