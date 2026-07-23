@@ -9,9 +9,8 @@ rather than predicting them:
 
 which is the whole point. The pair kinematics are not a function of `eGamma`:
 `G4BetheHeitler5DModel` draws them from a distribution over the full
-five-dimensional final state, so a regression trained with MSE can only ever
-learn the conditional mean and collapses onto it (see `conversion_dnn`, kept as
-the baseline that demonstrates exactly that). A flow learns the conditional
+five-dimensional final state, so a regression trained with MSE could only ever
+learn the conditional mean and collapse onto it. A flow learns the conditional
 density itself, and generating an event means drawing from it.
 
 Separate heads, chained
@@ -56,7 +55,7 @@ kinetic energy available to share::
 Two things fall out of this, both structural rather than learned:
 
 - ``f_lead <= 1`` makes ``eSub >= 0``, and energy conservation exact, for every
-  sample -- the failure mode `ConversionDNN` had to report as a diagnostic.
+  sample -- a constraint removed by construction rather than left to training.
 - ``f_lead >= 0.5`` keeps the leading lepton leading, so the sorted-pair
   convention of the dataset cannot be violated by a sample.
 
@@ -68,8 +67,8 @@ different one at every energy.
 Normalisation
 -------------
 
-The `eGamma` input keeps the scheme used by `ConversionDNN`: ``log10`` then a
-min-max rescaling onto ``[0, 1]``, from buffers fitted on the training split.
+The `eGamma` input uses ``log10`` then a min-max rescaling onto ``[0, 1]``, from
+buffers fitted on the training split.
 
 The three learned coordinates are **standardised** instead, which is a
 deliberate difference. The base distribution here is a standard normal and
@@ -128,9 +127,7 @@ LOSS_TERMS = ("isTriplet", "eRecoil", "eLead", "thetaLead")
 LOSS_WEIGHTS = {name: 1.0 for name in LOSS_TERMS}
 
 #: Default L2 penalty, applied by `ConversionFlow.make_optimiser` to the linear
-#: weights only. Deliberately the same value as `conversion_dnn.WEIGHT_DECAY`,
-#: so the two models are regularised on the same scale and any difference
-#: between them is a difference in model class rather than in penalty.
+#: weights only.
 WEIGHT_DECAY = 1e-4
 
 
@@ -176,9 +173,9 @@ class ConversionFlow(nn.Module):
         self.register_buffer("fitted", torch.zeros((), dtype=torch.bool))
 
         # -- shared trunk ---------------------------------------------------
-        # No batch norm here, unlike ConversionDNN. The trunk feeds heads that
-        # parameterise a density, and batch norm would make the log-likelihood
-        # of one row depend on which other rows happened to share its batch.
+        # No batch norm in the trunk. It feeds heads that parameterise a
+        # density, and batch norm would make the log-likelihood of one row
+        # depend on which other rows happened to share its batch.
         layers = []
         size = n_in
         for width in trunk_hidden:
@@ -224,8 +221,8 @@ class ConversionFlow(nn.Module):
     def make_optimiser(self, lr=1e-3, weight_decay=WEIGHT_DECAY):
         """Adam with an L2 penalty on the linear weights.
 
-        Same split as `ConversionDNN.make_optimiser`: weight matrices are
-        penalised, biases are not. MADE's `MaskedLinear` subclasses `nn.Linear`,
+        Weight matrices are penalised, biases are not. MADE's `MaskedLinear`
+        subclasses `nn.Linear`,
         so the heads are covered without naming them. Its masked-out entries are
         decayed along with the rest, which is harmless -- they are multiplied by
         a zero mask before they ever reach the output.

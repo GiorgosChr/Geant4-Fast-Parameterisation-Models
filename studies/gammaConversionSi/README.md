@@ -199,9 +199,9 @@ Two shapes are worth understanding before reading the plots:
 
 ## Training a model
 
-`training/conversion_data.py` holds `build_dataset()`, shared by both models: it turns the raw
-ntuple arrays into inputs and targets, sorting the pair by energy rather than by charge so no
-model has to learn the arbitrary e⁻/e⁺ labelling.
+`training/conversion_data.py` holds `build_dataset()`: it turns the raw ntuple arrays into inputs
+and targets, sorting the pair by energy rather than by charge so the model does not have to learn
+the arbitrary e⁻/e⁺ labelling.
 
 | | |
 | --- | --- |
@@ -222,72 +222,14 @@ the target does not depend on, and feeding it in only asks the network to learn 
 ignored. In fast simulation Geant4 supplies the vertex itself through the interaction length; a
 model of the conversion has to supply kinematics and nothing else.
 
-Two models are built on that dataset. **`ConversionFlow` is the one to use**; `ConversionDNN` is
-kept as the baseline that demonstrates why.
-
-### `ConversionDNN` — the regression baseline
-
-`training/conversion_dnn.py`. A shared trunk over `eGamma` feeding **one head per target**, each
-head with a hidden layer of its own. Note that a single *linear* layer per target would have been
-no different from one 3-wide output layer — the rows of that matrix are already independent — so
-it is the hidden layer that actually gives each target its own nonlinearity.
-
-**The normalisation is part of the model**, not the notebook. `input_min`, `input_max`,
-`target_min`, `target_max` are registered as *buffers*, so they are never touched by the
-optimiser, move with `.to(device)`, and are written into the `state_dict` — a saved checkpoint is
-self-contained, with no scaler to reload alongside it. `fit_normalisation(x, y)` is called once on
-the training split only; calling the model before that raises rather than silently training on
-unscaled data.
-
-The transform is `log10` then a min-max rescaling onto `[0, 1]`, because every quantity here is
-strictly positive and spans 4.7–12 orders of magnitude. Rescaling the raw values would leave
-almost every event squashed against zero with rare points far up the range. Working in log space
-also makes `eLead` and `eRecoil` positive by construction, since they are decoded through `10**x`.
-This is *in addition to* the `BatchNorm1d` in each trunk layer, which cannot see the raw physical
-scale because it only ever acts after the first linear layer.
-
-Because the range comes from the training split, validation and inference values can land just
-outside `[0, 1]`. That is expected, and nothing clamps them — clamping would quietly bias the
-extremes of the spectrum, which is exactly where the model is least constrained.
-
-L2 regularisation comes from `make_optimiser()`, which penalises the weight matrices and exempts
-biases and batch-norm affine parameters: shrinking a bias only displaces a layer's output, and
-shrinking a batch-norm scale fights the normalisation that layer exists to apply.
-
-```bash
-conda activate g4fastsim
-jupyter lab studies/gammaConversionSi/training/train_dnn.ipynb
-```
-
-A full run is 20 epochs over ~8 M training rows, about 13 minutes on an M-series GPU. Set
-`MAX_EVENTS` to a few hundred thousand to iterate quickly.
-
-#### A plain regression network does not solve this problem
-
-Worth knowing before spending time on it. Trained as above, the loss is flat from the first epoch
-and the median fractional errors on the validation set are:
-
-| target | median fractional error |
-| --- | --- |
-| `eLead` | 0.16 |
-| `thetaLead` | 0.53 |
-| `eRecoil` | 1.00 |
-
-That is not a bug in the network or the normalisation — energy conservation still closes to
-0.0 MeV and no validation event has `eSub < 0`. It is the model class being wrong for the task.
-Given `eGamma`, the pair kinematics are **not a deterministic function**: Geant4 samples the
-energy sharing and the angles from a distribution, and `G4BetheHeitler5DModel` does so over the
-full five-dimensional final state. A network trained with MSE can only learn the conditional
-*mean*, so it collapses onto it and the loss plateaus at the conditional variance — which is
-exactly what the flat curve shows. `eRecoil` is hit worst because its conditional distribution is
-the broadest, spanning roughly twelve orders of magnitude and being bimodal between the nuclear
-and triplet cases.
-
 ### `ConversionFlow` — sampling the final state
 
-`training/conversion_flow.py`, built on `nflows`. Reproducing those distributions needs a model
-that **samples** rather than regresses, and this one learns the conditional density itself. Each
-quantity has its own head reading a shared trunk over `eGamma`, and each later head also sees the
+`training/conversion_flow.py`, built on `nflows`. Given `eGamma`, the pair kinematics are **not a
+deterministic function**: Geant4 samples the energy sharing and the angles from a distribution, and
+`G4BetheHeitler5DModel` does so over the full five-dimensional final state. Reproducing those
+distributions needs a model that **samples** rather than regresses, and this one learns the
+conditional density itself. Each quantity has its own head reading a shared trunk over `eGamma`,
+and each later head also sees the
 quantity sampled before it, so the four together are the exact joint density by the chain rule:
 
 ```
@@ -302,7 +244,7 @@ It works in physics-scaled coordinates — energy *fractions* and `θ·E/mₑc²
 head's negative log-likelihood is averaged separately and the four are summed, so no head
 dominates the total and a head that stops learning gets its own flat curve.
 
-**[`training/Flow.md`](training/Flow.md) is the detailed reference** — dataset shapes, the
+**[`training/README.md`](training/README.md) is the detailed reference** — dataset shapes, the
 coordinate maps, the normalisation buffers, layer sizes, the loss and the L2 penalty. Keep it as
 the single source for those, rather than repeating them here.
 
@@ -311,8 +253,8 @@ conda activate g4fastsim
 jupyter lab studies/gammaConversionSi/training/train_flow.ipynb
 ```
 
-The notebook ends in a **closure test**, which is what replaces the DNN's per-event error table —
-there is no right answer per event, only a right distribution. It draws one sample per validation
+The notebook ends in a **closure test**, the right way to score a sampler — there is no right
+answer per event, only a right distribution. It draws one sample per validation
 row at that row's true `eGamma` and compares: the four marginals with ratio panels, the same
 marginals inside narrow `eGamma` slices (an inclusive marginal can look right while every
 individual energy is wrong), the `eLead`–`thetaLead` correlation the chained heads exist to

@@ -1,8 +1,7 @@
-"""Shared dataset definition for the gamma -> e+e- conversion models.
+"""Dataset definition for the gamma -> e+e- conversion flow.
 
-Both `conversion_dnn.ConversionDNN` and `conversion_flow.ConversionFlow` are
-trained on the same rows, so the ntuple-to-tensor step lives here rather than in
-either model:
+`conversion_flow.ConversionFlow` trains on these rows, and the ntuple-to-tensor
+step lives here rather than in the model:
 
     input    eGamma
     targets  eLead, thetaLead, eRecoil
@@ -11,8 +10,8 @@ either model:
 
 `eLead` and `eSub` are the higher and lower of the two lepton energies, sorted by
 magnitude rather than by charge, and `thetaLead` is the polar angle with respect
-to the incident photon of whichever lepton carried `eLead`. Sorting means neither
-model has to learn the arbitrary e-/e+ labelling.
+to the incident photon of whichever lepton carried `eLead`. Sorting means the
+model never has to learn the arbitrary e-/e+ labelling.
 
 `eRecoil` is kept as a target rather than neglected so that the energy-conservation
 step is exact. Every conversion emits three secondaries -- e-, e+ and a recoil --
@@ -63,8 +62,8 @@ ELECTRON_MASS = 0.51099895
 def build_dataset(arrays):
     """Turn raw ntuple arrays into model inputs and targets.
 
-    Sorts the pair by energy, so that no model has to learn the arbitrary e-/e+
-    labelling, and pairs each angle with the lepton it belongs to.
+    Sorts the pair by energy, so that the model does not have to learn the
+    arbitrary e-/e+ labelling, and pairs each angle with the lepton it belongs to.
 
     Parameters
     ----------
@@ -75,8 +74,8 @@ def build_dataset(arrays):
     Returns
     -------
     x, y, extra : (N, 1), (N, 3) float32 arrays and a dict
-        `extra` carries `eSub`, the true lower lepton energy, which the models
-        derive rather than predict, and `isTriplet`, the conversion mode -- 1
+        `extra` carries `eSub`, the true lower lepton energy, which the model
+        derives rather than samples, and `isTriplet`, the conversion mode -- 1
         when the photon converted on an atomic electron and the recoil is a
         second electron, 0 when it converted on a nucleus. Both are float32, so
         they can go straight into a tensor.

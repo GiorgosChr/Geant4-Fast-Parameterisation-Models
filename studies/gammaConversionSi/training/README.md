@@ -14,11 +14,11 @@ sampled  isTriplet, eRecoil, eLead, thetaLead
 derived  eSub = eGamma − 2mₑc² − eLead − eRecoil
 ```
 
-The regression baseline `ConversionDNN` exists to show why this is necessary: the pair kinematics
-are **not a function** of `eGamma`. `G4BetheHeitler5DModel` draws them from a distribution over the
-full five-dimensional final state, so a network trained with MSE can only learn the conditional
-*mean* and its loss plateaus at the conditional variance. A flow learns the conditional density
-itself, and generating an event means drawing from it.
+Sampling is necessary because the pair kinematics are **not a function** of `eGamma`.
+`G4BetheHeitler5DModel` draws them from a distribution over the full five-dimensional final state,
+so a network trained with MSE could only learn the conditional *mean* and its loss would plateau at
+the conditional variance. A flow learns the conditional density itself, and generating an event
+means drawing from it.
 
 ## The data
 
@@ -98,7 +98,7 @@ Implemented as `to_learned()` and `from_learned()`. Two properties follow **stru
 training**:
 
 - `sigmoid(z_lead) ≤ 1` ⟹ `eLead ≤ S − eRecoil` ⟹ **`eSub ≥ 0`, with energy conservation exact**
-  for every sample. This is the `ConversionDNN` failure mode removed rather than merely reported.
+  for every sample. Energy conservation is enforced by construction rather than left to training.
 - `sigmoid(z_lead) ≥ 0` ⟹ `eLead ≥ ½(S − eRecoil) ≥ eSub`, so a sample can never violate the
   sorted-pair convention the dataset is built on.
 
@@ -144,7 +144,7 @@ everything would leak the validation set's range into the model.
 
 Two scaling choices, deliberately different from each other:
 
-- **The `eGamma` input** keeps the scheme `ConversionDNN` uses: `log10`, then min-max onto `[0, 1]`.
+- **The `eGamma` input** uses `log10`, then min-max onto `[0, 1]`.
 - **The three learned coordinates are standardised** (zero mean, unit variance). The base
   distribution is a standard normal and `tail_bound` is expressed in its units, so anything beyond
   it lands in the spline's linear tails where there is no resolution left; standardising is what
@@ -189,7 +189,7 @@ head_blocks=2, num_bins=16, tail_bound=6.0, activation=nn.ReLU)`:
 | `triplet_head` | `Linear(64,64) → ReLU → Linear(64,1)` — a logit, not a probability |
 | `recoil_flow`, `lead_flow`, `theta_flow` | one `MaskedPiecewiseRationalQuadraticAutoregressiveTransform` each, over a `StandardNormal([1])` base |
 
-**No batch norm in the trunk**, unlike `ConversionDNN`. The trunk feeds heads that parameterise a
+**No batch norm in the trunk.** The trunk feeds heads that parameterise a
 density, and batch norm would make the log-likelihood of one row depend on which other rows
 happened to share its batch. (It is also why the notebook's `DataLoader` needs no `drop_last`.)
 
@@ -244,9 +244,7 @@ density. Training goes through `loss()`.
 ## Regularisation
 
 **L2 with a constant of `1e-4`**, from `WEIGHT_DECAY` in the module, applied by
-`make_optimiser(lr, weight_decay=WEIGHT_DECAY)`. It is the same value as
-`conversion_dnn.WEIGHT_DECAY`, so the two models are penalised on the same scale and any difference
-between them is a difference in model class rather than in regularisation.
+`make_optimiser(lr, weight_decay=WEIGHT_DECAY)`.
 
 The optimiser is Adam with **two parameter groups**:
 
@@ -334,8 +332,8 @@ not that the model is undertrained.
 
 ## Caveats
 
-- **The NLL is in the scaled coordinates.** It is not a likelihood in MeV and radians, and it is
-  not comparable with the MSE `ConversionDNN` reports. Only compare it with itself.
+- **The NLL is in the scaled coordinates.** It is not a likelihood in MeV and radians. Only
+  compare it with itself.
 - **Checkpoints are tied to the buffer shapes.** Changing the coordinate set or the per-mode recoil
   constants invalidates every saved `*.pt`.
 - **`nflows` bases are float64, and MPS has no float64.** `StandardNormal` registers its
