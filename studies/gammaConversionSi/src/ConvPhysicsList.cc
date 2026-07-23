@@ -7,6 +7,7 @@
 #include "G4BetheHeitler5DModel.hh"
 #include "G4BosonConstructor.hh"
 #include "G4EmParameters.hh"
+#include "G4FastSimulationManagerProcess.hh"
 #include "G4GammaConversion.hh"
 #include "G4IonConstructor.hh"
 #include "G4LeptonConstructor.hh"
@@ -18,8 +19,9 @@
 #include "G4ProductionCutsTable.hh"
 #include "G4SystemOfUnits.hh"
 
-ConvPhysicsList::ConvPhysicsList(const G4String& aModel, G4int aConversionType)
-  : fModel(aModel), fConversionType(aConversionType)
+ConvPhysicsList::ConvPhysicsList(const G4String& aModel, G4int aConversionType,
+                                 const G4String& aSimMode)
+  : fModel(aModel), fConversionType(aConversionType), fSimMode(aSimMode)
 {
   SetVerboseLevel(1);
   defaultCutValue = 0.7 * mm;
@@ -78,6 +80,17 @@ void ConvPhysicsList::ConstructProcess()
   while ((*particleIterator)()) {
     G4ParticleDefinition* particle = particleIterator->value();
     if (particle->GetParticleName() != "gamma") continue;
+    G4ProcessManager* pmanager = particle->GetProcessManager();
+
+    // In the "fast" mode the photon gets the fast-simulation interface instead
+    // of G4GammaConversion: the ConvFastSimModel attached to the block region
+    // then decides the conversion (from the real cross section) and generates
+    // the pair through the flow. For a region in the mass geometry the process
+    // is a plain PostStep discrete process, so ordering does not matter.
+    if (fSimMode == "fast") {
+      pmanager->AddDiscreteProcess(new G4FastSimulationManagerProcess("fastSimProcess_massGeom"));
+      continue;
+    }
 
     // The one and only physical process of this study. e- and e+ deliberately
     // keep transportation alone, so the pair leaves the conversion vertex
@@ -88,7 +101,7 @@ void ConvPhysicsList::ConstructProcess()
     if (fModel == "BetheHeitler5D") {
       conversion->SetEmModel(new G4BetheHeitler5DModel());
     }
-    particle->GetProcessManager()->AddDiscreteProcess(conversion);
+    pmanager->AddDiscreteProcess(conversion);
   }
 }
 

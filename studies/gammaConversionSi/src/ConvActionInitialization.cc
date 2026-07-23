@@ -13,13 +13,13 @@
 #include "G4UImanager.hh"
 
 ConvActionInitialization::ConvActionInitialization(const ConvDetectorConstruction* aDetector,
-                                                   ConvLogger* aLogger)
-  : fDetector(aDetector), fLogger(aLogger)
+                                                   ConvLogger* aLogger, const G4String& aSimMode)
+  : fDetector(aDetector), fLogger(aLogger), fSimMode(aSimMode)
 {}
 
 void ConvActionInitialization::BuildForMaster() const
 {
-  SetUserAction(new ConvRunAction());
+  SetUserAction(new ConvRunAction(fSimMode));
 }
 
 void ConvActionInitialization::Build() const
@@ -32,12 +32,17 @@ void ConvActionInitialization::Build() const
 
   SetUserAction(new ConvPrimaryGeneratorAction());
 
-  auto runAction = new ConvRunAction();
+  auto runAction = new ConvRunAction(fSimMode);
   SetUserAction(runAction);
 
   auto eventAction = new ConvEventAction(runAction);
   SetUserAction(eventAction);
 
-  SetUserAction(new ConvSteppingAction(eventAction, fDetector));
+  // In "fast" mode ConvFastSimModel::DoIt does the readout straight into the
+  // event action, so the stepping action -- which reads the "conv" step of the
+  // full run -- is only installed for "full".
+  if (fSimMode != "fast") {
+    SetUserAction(new ConvSteppingAction(eventAction, fDetector));
+  }
   SetUserAction(new ConvStackingAction());
 }

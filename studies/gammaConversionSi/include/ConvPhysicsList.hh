@@ -32,7 +32,11 @@ class ConvPhysicsList : public G4VUserPhysicsList
   public:
     /// @param aModel           "BetheHeitler5D" or "PairProductionRel"
     /// @param aConversionType  0 mixed, 1 nuclear only, 2 triplet only
-    explicit ConvPhysicsList(const G4String& aModel = "BetheHeitler5D", G4int aConversionType = 0);
+    /// @param aSimMode         "full" adds G4GammaConversion to the photon;
+    ///        "fast" adds the G4FastSimulationManagerProcess instead, so the
+    ///        ConvFastSimModel owns the conversion and its flow supplies the pair.
+    explicit ConvPhysicsList(const G4String& aModel = "BetheHeitler5D", G4int aConversionType = 0,
+                             const G4String& aSimMode = "full");
     ~ConvPhysicsList() override = default;
 
     void ConstructParticle() override;
@@ -42,6 +46,7 @@ class ConvPhysicsList : public G4VUserPhysicsList
   private:
     G4String fModel;
     G4int fConversionType;
+    G4String fSimMode;
 };
 
 #endif /* CONV_PHYSICS_LIST_HH */

@@ -79,11 +79,12 @@ int main(int argc, char** argv)
 
   auto runManager = G4RunManagerFactory::CreateRunManager(G4RunManagerType::Default);
 
-  auto detector = new ConvDetectorConstruction();
+  auto detector = new ConvDetectorConstruction(config.GetSimMode(), config.GetFlowModelDir());
   runManager->SetUserInitialization(detector);
   runManager->SetUserInitialization(
-    new ConvPhysicsList(config.GetModel(), config.GetConversionType()));
-  runManager->SetUserInitialization(new ConvActionInitialization(detector, &logger));
+    new ConvPhysicsList(config.GetModel(), config.GetConversionType(), config.GetSimMode()));
+  runManager->SetUserInitialization(
+    new ConvActionInitialization(detector, &logger, config.GetSimMode()));
 
   G4VisManager* visManager = new G4VisExecutive;
   visManager->Initialize();

@@ -28,10 +28,16 @@ class G4VPhysicalVolume;
 class ConvDetectorConstruction : public G4VUserDetectorConstruction
 {
   public:
-    ConvDetectorConstruction();
+    /// @param aSimMode      "full" or "fast"; in "fast" the block becomes a
+    ///        G4Region envelope carrying the ConvFastSimModel.
+    /// @param aFlowModelDir directory of the exported flow, forwarded to the model.
+    explicit ConvDetectorConstruction(const G4String& aSimMode = "full",
+                                      const G4String& aFlowModelDir = "models/onnx");
     ~ConvDetectorConstruction() override;
 
     G4VPhysicalVolume* Construct() override;
+    /// Attaches the fast-simulation model in "fast" mode; runs per worker thread.
+    void ConstructSDandField() override;
 
     /// Set the block material by NIST name, e.g. G4_Si or G4_PbWO4.
     void SetMaterial(const G4String& aName);
@@ -57,6 +63,10 @@ class ConvDetectorConstruction : public G4VUserDetectorConstruction
     G4double fBlockThickness = 1. * m;
     /// Full transverse extent of the block.
     G4double fBlockWidth = 1. * m;
+    /// "full" or "fast"; only "fast" builds a region and a fast-sim model.
+    G4String fSimMode = "full";
+    /// Directory of the exported flow, passed to ConvFastSimModel.
+    G4String fFlowModelDir = "models/onnx";
 };
 
 #endif /* CONV_DETECTOR_CONSTRUCTION_HH */

@@ -77,6 +77,12 @@ G4bool ConvConfig::Read(const G4String& aPath)
     else if (key == "conversionType") {
       fConversionType = value;
     }
+    else if (key == "simMode") {
+      fSimMode = value;
+    }
+    else if (key == "flowModelDir") {
+      fFlowModelDir = value;
+    }
     else if (key == "outputDir") {
       fOutputDir = value;
     }
@@ -109,6 +115,10 @@ G4bool ConvConfig::Read(const G4String& aPath)
   if (fConversionType != "mixed" && fConversionType != "nuclear" && fConversionType != "triplet") {
     G4cerr << "ConvConfig: unknown conversionType '" << fConversionType
            << "', expected mixed, nuclear or triplet" << G4endl;
+    return false;
+  }
+  if (fSimMode != "full" && fSimMode != "fast") {
+    G4cerr << "ConvConfig: unknown simMode '" << fSimMode << "', expected full or fast" << G4endl;
     return false;
   }
   return true;
@@ -205,6 +215,8 @@ void ConvConfig::Print() const
          << "\n"
          << "  events          : " << fNbEvents << " on " << fNbThreads << " thread(s)\n"
          << "  conversion model: " << fModel << " (" << fConversionType << ")\n"
+         << "  simulation mode : " << fSimMode
+         << (fSimMode == "fast" ? " (flow: " + fFlowModelDir + ")" : "") << "\n"
          << "  output          : " << OutputFilePath() << ".root\n"
          << "  log             : " << LogFilePath() << "\n"
          << "------------------------------------------------------------\n"

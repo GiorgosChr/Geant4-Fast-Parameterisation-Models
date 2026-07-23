@@ -4,6 +4,7 @@
 #ifndef CONV_ACTION_INITIALIZATION_HH
 #define CONV_ACTION_INITIALIZATION_HH
 
+#include "G4String.hh"
 #include "G4VUserActionInitialization.hh"
 
 class ConvDetectorConstruction;
@@ -13,10 +14,12 @@ class ConvLogger;
 class ConvActionInitialization : public G4VUserActionInitialization
 {
   public:
-    /// @param aLogger optional; when given, Build() also routes this worker
+    /// @param aLogger  optional; when given, Build() also routes this worker
     ///        thread's output into the shared log file.
+    /// @param aSimMode "full" or "fast"; in "fast" the ConvFastSimModel does the
+    ///        readout, so the ConvSteppingAction is not installed.
     ConvActionInitialization(const ConvDetectorConstruction* aDetector,
-                             ConvLogger* aLogger = nullptr);
+                             ConvLogger* aLogger = nullptr, const G4String& aSimMode = "full");
     ~ConvActionInitialization() override = default;
 
     void BuildForMaster() const override;
@@ -25,6 +28,7 @@ class ConvActionInitialization : public G4VUserActionInitialization
   private:
     const ConvDetectorConstruction* fDetector = nullptr;
     ConvLogger* fLogger = nullptr;
+    G4String fSimMode = "full";
 };
 
 #endif /* CONV_ACTION_INITIALIZATION_HH */

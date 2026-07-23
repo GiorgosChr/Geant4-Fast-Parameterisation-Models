@@ -69,6 +69,8 @@ mono-energetic run.
 | `nEvents`, `nThreads` | `100000`, `10` | |
 | `model` | `BetheHeitler5D` | Conversion model, see below |
 | `conversionType` | `mixed` | `mixed`, `nuclear` or `triplet` |
+| `simMode` | `full` | `full` runs `G4GammaConversion`; `fast` runs the normalising-flow fast-simulation model (see below) |
+| `flowModelDir` | `models/onnx` | Directory of the exported flow, used only when `simMode = fast` |
 | `outputDir` | `ntuples` | Created if missing |
 | `logDir` | `logs` | Created if missing |
 | `outputName` | *(derived)* | Overrides the derived file name |
@@ -305,3 +307,65 @@ Reproduced on this machine with the shipped configs:
   `default.cfg` gives **99.77 %** in 10 m of silicon, against 93.1 % when the block was 1 m — the
   shortfall is entirely the lowest energies, where the mean free path is metres. The end-of-run
   summary prints this number.
+
+## Fast simulation with the flow (`simMode = fast`)
+
+The same executable can replace Geant4's final-state sampler with the trained flow, as a
+`G4VFastSimulationModel` (`ConvFastSimModel`) attached to the block, turned on with `simMode = fast`.
+It is deliberately faithful in the one place that matters and fast in the other:
+
+- **The conversion is decided exactly as Geant4 decides it.** `ModelTrigger` draws the interaction
+  length from the *real* pair-production cross section — an owned, standalone `G4BetheHeitler5DModel`,
+  the same parametrisation the full run uses — so the conversion rate and the vertex distribution are
+  unchanged. Because the block is one uniform material and the photon loses no energy before
+  converting, a single exponential draw over the traversal is exactly equivalent to Geant4's
+  step-by-step sampling of that constant mean free path.
+- **Only the final state comes from the flow.** When a conversion falls inside the block, `DoIt`
+  passes the photon energy to `ConversionFlowInference`, which runs the exported flow through **ONNX
+  Runtime** and returns the pair energies, the leading polar angle, the recoil and the triplet flag.
+  The charge label, the azimuth and the sub-lepton angle (by coplanar transverse-momentum balance)
+  are assigned in `DoIt`, since the flow does not model them.
+
+Both modes fill the identical `conversions` ntuple, so the fast output is validated directly against
+the full one (closure). With matched seeds the two agree on the conversion fraction, `pathInBlock`
+and `zConv`, the pair energies, the median leading angle and the triplet fraction; energy
+conservation is *exact* in fast mode (`from_learned` closes the algebra), against Geant4's float
+rounding. The sub-lepton angle and the acoplanarity are only approximate — the flow does not model
+them.
+
+### Exporting the flow
+
+The C++ side does not load the PyTorch checkpoint. `training/export_flow_onnx.py` writes the
+deterministic sub-networks (the shared trunk and one MADE per head) to ONNX and the standardisation
+constants to text, into `training/models/onnx/`; the stochastic remainder (the standard-normal draws,
+the rational-quadratic spline **inverse**, the de-standardisation and `from_learned`) is
+reimplemented in `ConversionFlowInference` and validated against `nflows` by the export script (spline
+inverse to 1e-5; sampled distributions within sampling noise). Run it once before building:
+
+```bash
+conda run -n g4fastsim python training/export_flow_onnx.py   # writes models/onnx/
+```
+
+CMake copies `models/onnx/` next to the executable, so the default `flowModelDir = models/onnx`
+resolves from the build directory. Fast mode needs ONNX Runtime (`brew install onnxruntime`); the
+build fails with a clear message if it is missing.
+
+### Benchmarking full vs fast
+
+`benchmark/run_benchmark.sh` times both modes over many experiments. Each run prints one
+machine-parseable `BENCHMARK` line (mode, events, real/user/sys seconds for the **event loop only** —
+the timer excludes I/O, table building and the one-time flow load), which the script collects into
+`benchmark/results/timings.csv`:
+
+```bash
+source install/geant4/bin/geant4.sh
+./studies/gammaConversionSi/benchmark/run_benchmark.sh          # 100 experiments x 1e6 events, per mode
+EXPERIMENTS=2 EVENTS=20000 .../run_benchmark.sh                 # quick smoke run
+python3 studies/gammaConversionSi/benchmark/summarise.py <csv>  # per-mode mean/sd, throughput, ratio
+```
+
+`benchmark/{full,fast}.cfg` are `default.cfg`'s 10 m Si geometry at 1e6 events, single-threaded for a
+clean per-experiment wall time, with a fixed `outputName` per mode so the ntuple is overwritten each
+experiment (the last survives as the closure sample) rather than filling the disk. On this machine
+the flow mode runs **≈ 2× faster** per event than the full 5D model — the 5D sampler rebuilds the
+recoil nucleus through `G4IonTable` on every conversion, which costs more than the flow's ONNX call.

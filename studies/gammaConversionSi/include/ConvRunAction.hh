@@ -5,6 +5,8 @@
 #define CONV_RUN_ACTION_HH
 
 #include "G4Accumulable.hh"
+#include "G4String.hh"
+#include "G4Timer.hh"
 #include "G4Types.hh"
 #include "G4UserRunAction.hh"
 
@@ -38,7 +40,9 @@ class ConvRunAction : public G4UserRunAction
       kIsTriplet
     };
 
-    ConvRunAction();
+    /// @param aSimMode "full" or "fast", reported on the BENCHMARK line so the
+    ///        harness can attribute each timing to the right mode.
+    explicit ConvRunAction(const G4String& aSimMode = "full");
     ~ConvRunAction() override = default;
 
     void BeginOfRunAction(const G4Run* aRun) override;
@@ -48,6 +52,10 @@ class ConvRunAction : public G4UserRunAction
     void CountEvent(G4bool aConverted);
 
   private:
+    G4String fSimMode;
+    /// Times only the event loop -- started after the file is opened, stopped
+    /// before it is written -- so the per-experiment number excludes I/O.
+    G4Timer fTimer;
     G4Accumulable<G4int> fNbEvents{"nbEvents", 0};
     G4Accumulable<G4int> fNbConverted{"nbConverted", 0};
 };

@@ -41,6 +41,11 @@ class ConvConfig
     G4int GetConversionType() const;
     G4int GetNbEvents() const { return fNbEvents; }
 
+    /// "full" (Geant4 conversion) or "fast" (the normalising-flow model).
+    G4String GetSimMode() const { return fSimMode; }
+    /// Directory of the exported ONNX flow, used only in the "fast" mode.
+    G4String GetFlowModelDir() const { return fFlowModelDir; }
+
     /// Full path of the ROOT file, without the .root extension that
     /// G4AnalysisManager appends. Creates the output directory if needed.
     G4String OutputFilePath() const;
@@ -69,6 +74,10 @@ class ConvConfig
     /// "mixed" (nuclear and triplet in their natural 1/Z ratio), "nuclear" or
     /// "triplet". Only acts on the BetheHeitler5D model.
     G4String fConversionType = "mixed";
+    /// "full" runs G4GammaConversion; "fast" runs the ConvFastSimModel flow.
+    G4String fSimMode = "full";
+    /// Where the exported flow (trunk.onnx, heads, flow_constants.txt) lives.
+    G4String fFlowModelDir = "models/onnx";
     G4String fOutputDir = "ntuples";
     G4String fLogDir = "logs";
     /// Optional explicit file name; auto-generated when left empty.
