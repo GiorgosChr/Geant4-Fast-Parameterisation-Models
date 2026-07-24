@@ -1,5 +1,8 @@
 # Geant4-Fast-Parameterisation-Models
-Geant4 fast parameterisation examples and utilities for implementing, testing, and benchmarking fast detector simulation techniques using G4FastSimulationModel.
+
+Geant4 fast-simulation ("parameterisation") examples and utilities: replacing the detailed,
+step-by-step tracking inside a detector region with a learned model of its response, then testing
+and benchmarking it.
 
 ## Layout
 
@@ -10,66 +13,63 @@ Geant4 fast parameterisation examples and utilities for implementing, testing, a
 
 ### Studies
 
-- [`studies/gammaConversionSi`](studies/gammaConversionSi) — γ → e⁺e⁻ conversion in a thick
-  silicon block with pair conversion as the *only* physics process. Writes a ROOT ntuple with the
-  photon energy, the path length in silicon before converting, and the pair energies and angles.
-  Run configuration comes from a `key = value` file; output files are auto-named from the material,
-  energy range and event count and collected under `ntuples/`.
+Each study generates clean physics ground truth and then fits a fast-simulation model to it.
+
+- [`studies/gammaConversionSi`](studies/gammaConversionSi) — γ → e⁺e⁻ conversion in a silicon
+  block, with pair conversion as the *only* physics process. Trains a **normalising flow** on the
+  pair kinematics and runs it back inside Geant4 as a fast-simulation model.
+- [`studies/gammaConversion`](studies/gammaConversion) — the same idea generalised to a scan over
+  materials, so the flow can be conditioned on the target atomic number `Z`.
 
 ## Analysis environment
 
-`environment.yml` describes a conda environment for analysing the `.root` output and for training
-the ML models behind a parameterisation:
+`environment.yml` describes a conda environment for reading the `.root` output and training the
+models:
 
 ```bash
 conda env create -f environment.yml
 conda activate g4fastsim
 ```
 
-Nothing in this repository needs it to build or run — Geant4 writes its ntuples through bundled
-g4tools, and the studies are plain C++ applications. It carries ROOT, uproot/awkward, the Scikit-HEP
-stack, and **PyTorch as the only deep-learning framework**; there is no TensorFlow or Keras, which
-is what allows numpy to stay on the current 2.x series.
+Nothing here needs it to build or run — Geant4 writes its ntuples through bundled g4tools, and the
+studies are plain C++ applications. It carries ROOT, the Scikit-HEP stack (uproot, awkward, …) and
+**PyTorch as the only deep-learning framework**.
 
 ## Dependencies
 
-The Geant4 toolkit itself is vendored as a git submodule at `geant4/` (currently `v11.5.0.beta`), so the dependencies below are those needed to *build* it and any application in this repo.
-
-### Required
-
-| Dependency | Minimum | Notes |
-| --- | --- | --- |
-| C++ compiler | C++17 | Apple clang (Xcode Command Line Tools) or GCC 9+. Also supplies the system `expat`, which Geant4 uses for its GDML/physics data parsing. |
-| CMake | 3.16 | Geant4 declares `cmake_minimum_required(VERSION 3.16...3.27)`. |
-| git | any | Needed for the submodule: ~200 MB of working tree plus ~440 MB of git objects. |
-| Disk space | 15 GB free | The physics datasets pulled in by `-DGEANT4_INSTALL_DATA=ON` are several GB on their own, on top of the build tree and the install prefix. |
+Geant4 is vendored as a git submodule at `geant4/` (`v11.5.0.beta`); the dependencies below build it
+and any application here.
 
 ```bash
 git submodule update --init --recursive
 ```
 
+### Required
+
+| Dependency | Minimum | Notes |
+| --- | --- | --- |
+| C++ compiler | C++17 | Apple clang or GCC 9+; also supplies the `expat` Geant4 uses to parse its data |
+| CMake | 3.16 | Geant4 requires `3.16…3.27` |
+| Disk space | ~15 GB | The physics datasets pulled in by `-DGEANT4_INSTALL_DATA=ON` dominate |
+
 ### Optional
 
 | Dependency | Enables | CMake flag |
 | --- | --- | --- |
-| Qt 6 (`qtbase` only) | Interactive UI and the OpenGL/ToolsSG viewers — the practical GUI option on macOS | `-DGEANT4_USE_QT=ON` |
+| Qt 6 (`qtbase` only) | Interactive UI and OpenGL viewers | `-DGEANT4_USE_QT=ON` |
 | Xerces-C | GDML geometry import/export | `-DGEANT4_USE_GDML=ON` |
-| ONNX Runtime / LibTorch / LWTNN | ML inference backends, only if following the Par04 ML-shower example | selected by `find_package` in that example |
+| ONNX Runtime | Running an exported flow inside Geant4 (fast-sim mode) | detected by `find_package` |
 
-Geant4 requires only the `Core`, `Gui`, `Widgets`, `OpenGL` and `OpenGLWidgets` Qt 6 components (see `geant4/cmake/Modules/G4InterfaceOptions.cmake`), all of which live in Homebrew's `qtbase` formula. Installing the full `qt` formula instead pulls in ~50 extra packages (including `qtwebengine`) that are never used:
+Geant4 needs only the `Core Gui Widgets OpenGL OpenGLWidgets` Qt components, all in Homebrew's
+`qtbase` — the full `qt` formula pulls in ~50 unused packages. Because `qtbase` is off CMake's
+default search path, pass its prefix when configuring:
 
 ```bash
 brew install qtbase xerces-c
-```
-
-Because `qtbase` is not on CMake's default search path, pass its prefix when configuring:
-
-```bash
 cmake -S geant4 -B build/geant4 -DCMAKE_INSTALL_PREFIX=$PWD/install/geant4 \
       -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qtbase \
       -DGEANT4_INSTALL_DATA=ON -DGEANT4_BUILD_MULTITHREADED=ON -DGEANT4_USE_QT=ON
 ```
 
-Omitting `-DCMAKE_PREFIX_PATH` produces `Could not find a package configuration file provided by "QT"`. Building without Qt at all (`-DGEANT4_USE_QT=OFF`) still works, leaving the terminal UI and the file-based vis drivers (VRML, HepRep, ASCIITree).
-
-On Linux the equivalents are `qt6-base-dev` / `qt6-qtbase-devel`, `libxerces-c-dev`, plus `libexpat1-dev` and X11/OpenGL development headers.
+Building without Qt (`-DGEANT4_USE_QT=OFF`) still works, leaving the terminal UI and file-based vis
+drivers. On Linux the equivalents are `qt6-base-dev`, `libxerces-c-dev` and X11/OpenGL headers.
