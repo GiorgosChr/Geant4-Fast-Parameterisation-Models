@@ -9,7 +9,7 @@ and benchmarking it.
 | Path | Contents |
 | --- | --- |
 | `studies/` | Self-contained preliminary studies, each its own CMake project |
-| `geant4/`, `root/` | Vendored upstream toolkits (git submodules, read-only) |
+| `geant4/` | Vendored upstream Geant4 toolkit (git submodule, read-only) |
 
 ### Studies
 
